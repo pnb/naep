@@ -21,6 +21,7 @@ from tqdm import tqdm
 from sklearn import ensemble, model_selection, pipeline, metrics
 
 import load_data
+import misc_util
 
 
 RANDOM_SEED = 11798
@@ -72,10 +73,13 @@ freq_actions = freq_actions[freq_actions > 2000].index
 item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.05)
                         for i, v in df.groupby('AccessionNumber')}
 X, y, features = extract_features(df, freq_actions, item_5percentile_map)
-features = [f for f in features if not f.startswith('poly_')]  # Exclude for now
-print(features)
+features = [f for f in features if not f.startswith('poly_')]  # Exclude for now TODO: See if including increases prediction correlations with TSFresh model
+print(len(features), 'features:', features)
 
-print('Fitting model')
+fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, verbose=2)
+features = fsets[0]  # TODO: Just for now try the first one, then maybe do others/group together
+
+# Set up model training parameters
 m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
 grid = {
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
@@ -85,15 +89,19 @@ pipe = pipeline.Pipeline([
     ('model', m),
 ], memory=CACHE_DIR)
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
-gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1)
+gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
+                                  scoring=metrics.make_scorer(metrics.cohen_kappa_score))
+
+print('Fitting feature importance model')
+imp = gs.fit(X[features], y).best_estimator_.named_steps['model'].feature_importances_
+print('\n'.join([f + ':\t' + str(i) for i, f in sorted(zip(imp, features), reverse=True)]))
+
+print('Fitting cross-validated model')
 scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 result = model_selection.cross_validate(gs, X[features], y, cv=xval, verbose=2, scoring=scoring)
 print(result)
-print('Fitting feature importance model')
-imp = gs.fit(X[features], y).best_estimator_.named_steps['model'].feature_importances_
-print('\n'.join([f + ':\t' + str(i) for i, f in sorted(zip(imp, features), reverse=True)]))
 
 # Train model on all data and make predictions for competition hold-out set
 print('Loading holdout data')
