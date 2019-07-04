@@ -1,0 +1,45 @@
+https://sites.google.com/view/dataminingcompetition2019/home
+
+Dataset
+
+We will be using a dataset provided by Educational Testing Service. This dataset is a deidentified compilation of actions students made during testing in the 2016-2017 academic year. The students worked on "blocks" of test math problems, referred to as Blocks A and B. Each block contains a set number of problems and each student had a 30 minute time limit to complete the problems in each block. Once the 30 minutes are completed, students are automatically dismissed from the block, regardless of how many problems they have completed. Please view several sample questions from the 8th grade curriculum. 
+
+You can sign up for the dataset access here https://forms.gle/VWLcHDuJ8sEtkyB48. The access to the dataset is free to competition participants and researchers who comply with our Terms of Use.  While competition participation is not required to access the dataset, it is strongly encouraged.
+Target Variable
+
+The Target Variable is a binary indicator of whether or not the student spent their time in Block B efficiently. Specifically, we defined efficient usage of time as 1) being able to complete all problems in Block B, and 2) being able to allocate a reasonable amount of time to solve each problem. 
+
+The competition organizers defined a "reasonable amount of time" as the minimum possible time needed to solve each problem. This threshold is very hard to define. For the sake of this competition, we chose the threshold based on the distribution of the total amount of time students spent on each problem in the dataset. Specifically, for each problem in Block B, we ranked the total amount of time each student took to complete each problem, and used the 5th percentile as the cut-off for the "reasonable amount of time."
+Training Set and Hidden Set
+
+We separated the dataset by students into subsets: the training set and the hidden set. The training set is provided to allow participants to build models to predict whether students in the hidden set spent time efficiently in Block B, using only (some of) their data from Block A. 
+
+    Training Set: For each student in the training set, we provide all 30 minutes of their logged actions in Block A, as well as whether they spent their time efficiently in Block B or not (target variable)
+    Hidden Set: The target variable is not provided for any students in the hidden set. The hidden set consists of 3 components of equal portion. For each component, we provide different amounts of information from Block A. Specifically:
+        For the first component, we provide all 30 minutes of logged actions similarly to the training set
+        For the second component, we only provide the first 20 minutes of logged actions (the last 10 minutes of logged actions were omitted from the dataset).
+        For the third component, we only provide the first 10 minutes of logged actions (the last 20 minutes of logged actions were omitted from the dataset).
+
+We then created a leaderboard set and a final test set, of equal size, drawn equally from the three components. The leaderboard set is used to provide participants with feedback on how their models perform in comparison with other participants, when applied to half of the hidden set. The final test set is the subset that will be used to evaluate participants' prediction at the end of the competition. In creating the subsets and the leaderboard and test sets, as well as the three components, we maintain the original distribution of the target variable in all cases. 
+Data Description
+
+The dataset contains 6 files:
+
+    data_a_train.csv: this file contains logged actions in Block A of students in the the training set.
+    data_train_label.csv: this file contains the target variable of students in the training set.
+    data_a_hidden_10.csv: this file contains logged actions in Block A of the students in the the hidden set where we only give out only the first 10 minutes of logged actions.
+    data_a_hidden_20.csv: this file contains logged actions in Block A of the students in the the hidden set where we only give out only the first 20 minutes of logged actions.
+    data_a_hidden_30.csv: this file contains logged actions in Block A of the students in the the hidden set where we only give out the all 30 minutes of logged actions.
+    hidden_label.csv: this file contains a list of STUDENTID of all students in the hidden set in ascending order.  Submitted predictions must be in the same order as provided in this file.
+
+Columns
+
+The data in data_a_train.csv, data_a_hidden_10.csv, data_a_hidden_20.csv, and data_a_hidden_30.csv are in the same format. The definition of each column is:
+
+    STUDENTID: A unique identifier for each student which (to the best of our ability) cannot be traced back to individual students 
+    Block: The block that the action happened in. Logged actions are only provided for Block A. 
+    AccessionNumber: A unique identification of a problem/item.
+    ItemType: The type of the item
+    Observable: The type of the action the student took.
+    ExtendedInfo: Additional information on the student action e.g. which choice the student clicked
+    EventTime: The timestamp of when the action was taken.
