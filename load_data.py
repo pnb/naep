@@ -11,7 +11,12 @@ def _preprocess(df):
     # "Calculator Buffer" is a better indicator of closing the calculator, because sometimes it gets
     # automatically closed if the student opens a new scratch area or switches problems
     df = df[df.Observable != 'Close Calculator']
+    df = df[df.EventTime.notnull()]  # Two null rows causing some outliers in delta time
     df = df.loc[(df.shift(1) != df).any(axis=1)]  # Remove consecutive duplicate rows (keep first)
+    df['delta_time_ms'] = 0
+    for pid, pid_df in df.groupby('STUDENTID'):
+        df.loc[pid_df.index, 'delta_time_ms'] = \
+            (pid_df.time_unix.shift(-1) - pid_df.time_unix).fillna(0)
     return df
 
 
