@@ -1,3 +1,8 @@
+# Some data that should not be shared in a repo
+public_data
+nn_data
+tmp.*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
