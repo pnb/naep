@@ -3,12 +3,19 @@ import re
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy import stats
 
 
 VALIDITY_REGEX = r'^(\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*,){1231}\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*$'
 
 
-df = pd.read_csv('model_fe.csv')
+model_fe = pd.read_csv('model_fe.csv')
+model_tsfresh = pd.read_csv('model_tsfresh.csv')
+print('FE <=> TSFresh r =', np.corrcoef(model_fe.pred, model_tsfresh.pred)[0, 1])
+print('FE <=> TSFresh rho =', stats.spearmanr(model_fe.pred, model_tsfresh.pred)[0])
+
+df = model_tsfresh
 preds = ','.join(df.pred.astype(str))
 assert re.match(VALIDITY_REGEX, preds)
 

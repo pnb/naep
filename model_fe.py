@@ -105,6 +105,7 @@ print(result)
 
 # Train model on all data and make predictions for competition hold-out set
 print('Loading holdout data')
+# TODO: Add c-v predictions for training data above, plus perf metrics, to enable better fusion later
 hidden_result = pd.read_csv('public_data/hidden_label.csv', index_col='STUDENTID')
 hidden_result['pred'] = ''
 hidden_result['data_length'] = ''
@@ -118,5 +119,7 @@ for datalen, train_df, holdout_df in [(10, load_data.train_10m(), load_data.hold
     probs = gs.fit(train_X[train_feats], train_y).predict_proba(holdout_X[train_feats]).T[1]
     hidden_result.loc[holdout_X.STUDENTID, 'pred'] = probs
     hidden_result.loc[holdout_X.STUDENTID, 'data_length'] = datalen
-    print(gs.best_estimator_)
+    print('Grid search best estimator:', gs.best_estimator_)
+    print('Grid search scorer:', gs.scorer_)
+    print('Grid search best score:', gs.best_score_)
 hidden_result.to_csv('model_fe.csv')
