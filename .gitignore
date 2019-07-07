@@ -3,6 +3,8 @@ public_data
 nn_data
 tmp.*
 
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
