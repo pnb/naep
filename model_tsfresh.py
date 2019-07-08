@@ -65,7 +65,6 @@ xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 
-'''
 # Just out of curiosity to see approximately how many features there are as well
 print('Fitting feature importance model')
 imp_m = gs.fit(X_df, y_df.label).best_estimator_
@@ -79,7 +78,6 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 result = model_selection.cross_validate(gs, X_df, y_df.label, cv=xval, verbose=2, scoring=scoring)
 print(result)
-'''
 
 # Train model on all data and make predictions for competition hold-out set
 print('Loading holdout data')

@@ -112,7 +112,7 @@ hidden_result['data_length'] = ''
 for datalen, train_df, holdout_df in [(10, load_data.train_10m(), load_data.holdout_10m()),
                                       (20, load_data.train_20m(), load_data.holdout_20m()),
                                       (30, load_data.train_full(), load_data.holdout_30m())]:
-    print('Training/applying holdout model for', datalen, 'minutes')
+    print('Training/applying holdout model for', datalen, 'minutes data')
     train_X, train_y, train_feats = extract_features(train_df, freq_actions, item_5percentile_map)
     holdout_X, _, holdout_feats = extract_features(holdout_df, freq_actions, item_5percentile_map)
     assert set(train_feats) == set(holdout_feats), 'Feature mismatch between train/test data'
