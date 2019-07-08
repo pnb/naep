@@ -17,6 +17,7 @@ def _preprocess(df):
     for pid, pid_df in df.groupby('STUDENTID'):
         df.loc[pid_df.index, 'delta_time_ms'] = \
             (pid_df.time_unix.shift(-1) - pid_df.time_unix).fillna(0)
+    df['EventTime'] = pd.to_datetime(df.EventTime)
     return df
 
 
