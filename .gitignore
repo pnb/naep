@@ -1,6 +1,7 @@
 # Some data that should not be shared in a repo
 public_data
 nn_data
+featuretools_data
 tmp.*
 
 .DS_Store
