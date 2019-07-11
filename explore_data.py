@@ -12,6 +12,7 @@ df = load_data.train_full()
 
 print(len(df), 'rows')
 print(len(df.STUDENTID.unique()), 'unique students')
+print(df.label.mean(), 'positive class base rate')
 print(df.columns)
 print(df.groupby(['ItemType', 'AccessionNumber']).size())
 print('\nNumber of rows per student ID:')
@@ -62,13 +63,13 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 
 # Correlations for time spent per student per item exceeding the 5th percentile
 # There is actually something here!
-for item, item_df in df.groupby('AccessionNumber'):
-    student_level = []
-    for pid, pid_df in item_df.groupby('STUDENTID'):
-        student_level.append([pid_df.delta_time_ms.sum() / 1000, pid_df.label.iloc[0]])
-    student_level = np.array(student_level).T
-    student_level[0] = student_level[0] > np.percentile(student_level[0], 5)
-    print(item, np.corrcoef(student_level)[0, 1])
+# for item, item_df in df.groupby('AccessionNumber'):
+#     student_level = []
+#     for pid, pid_df in item_df.groupby('STUDENTID'):
+#         student_level.append([pid_df.delta_time_ms.sum() / 1000, pid_df.label.iloc[0]])
+#     student_level = np.array(student_level).T
+#     student_level[0] = student_level[0] > np.percentile(student_level[0], 5)
+#     print(item, np.corrcoef(student_level)[0, 1])
 
 # Are items presented in the same order for all students?
 # No, there were navigation tabs; most students went in order, but some did not

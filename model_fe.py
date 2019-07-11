@@ -76,8 +76,7 @@ X, y, features = extract_features(df, freq_actions, item_5percentile_map)
 features = [f for f in features if not f.startswith('poly_')]  # Exclude for now TODO: See if including increases prediction correlations with TSFresh model
 print(len(features), 'features:', features)
 
-fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, verbose=2)
-features = fsets[0]  # TODO: Just for now try the first one, then maybe do others/group together
+fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, verbose=1)
 
 # Set up model training parameters
 m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
@@ -91,35 +90,65 @@ pipe = pipeline.Pipeline([
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-
-print('Fitting feature importance model')
-imp = gs.fit(X[features], y).best_estimator_.named_steps['model'].feature_importances_
-print('\n'.join([f + ':\t' + str(i) for i, f in sorted(zip(imp, features), reverse=True)]))
-
-print('Fitting cross-validated model')
 scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
-result = model_selection.cross_validate(gs, X[features], y, cv=xval, verbose=2, scoring=scoring)
-print(result)
+
+# print('Fitting feature importance model')
+# imp = gs.fit(X[features], y).best_estimator_.named_steps['model'].feature_importances_
+# print('\n'.join([f + ':\t' + str(i) for i, f in sorted(zip(imp, features), reverse=True)]))
+
+print('Loading holdout data')
+dfs = {
+    'train_10m': load_data.train_10m(),
+    'train_20m': load_data.train_20m(),
+    'train_full': df,
+    'holdout_10m': load_data.holdout_10m(),
+    'holdout_20m': load_data.holdout_20m(),
+    'holdout_30m': load_data.holdout_30m(),
+}
+feat_dfs = {}
+for dsname in dfs:
+    print('\nFeatures for', dsname)
+    tx, ty, _ = extract_features(dfs[dsname], freq_actions, item_5percentile_map)
+    feat_dfs[dsname] = {'X': tx, 'y': ty}
 
 # Train model on all data and make predictions for competition hold-out set
-print('Loading holdout data')
-# TODO: Add c-v predictions for training data above, plus perf metrics, to enable better fusion later
-hidden_result = pd.read_csv('public_data/hidden_label.csv', index_col='STUDENTID')
-hidden_result['pred'] = ''
-hidden_result['data_length'] = ''
-for datalen, train_df, holdout_df in [(10, load_data.train_10m(), load_data.holdout_10m()),
-                                      (20, load_data.train_20m(), load_data.holdout_20m()),
-                                      (30, load_data.train_full(), load_data.holdout_30m())]:
-    print('Training/applying holdout model for', datalen, 'minutes data')
-    train_X, train_y, train_feats = extract_features(train_df, freq_actions, item_5percentile_map)
-    holdout_X, _, holdout_feats = extract_features(holdout_df, freq_actions, item_5percentile_map)
-    assert set(train_feats) == set(holdout_feats), 'Feature mismatch between train/test data'
-    probs = gs.fit(train_X[train_feats], train_y).predict_proba(holdout_X[train_feats]).T[1]
-    hidden_result.loc[holdout_X.STUDENTID, 'pred'] = probs
-    hidden_result.loc[holdout_X.STUDENTID, 'data_length'] = datalen
-    print('Grid search best estimator:', gs.best_estimator_)
-    print('Grid search scorer:', gs.scorer_)
-    print('Grid search best score:', gs.best_score_)
-hidden_result.to_csv('model_fe.csv')
+for fset_i, features in enumerate(fsets[:2]):
+    hidden_result = pd.read_csv('public_data/hidden_label.csv')
+    hidden_result['holdout'] = 1
+    hidden_result['feature_set'] = fset_i
+    train_results = []
+    for datalen, train_ds, holdout_ds in [(10, 'train_10m', 'holdout_10m'),
+                                          (20, 'train_20m', 'holdout_20m'),
+                                          (30, 'train_full', 'holdout_30m')]:
+        train_X, train_y = feat_dfs[train_ds]['X'], feat_dfs[train_ds]['y']
+        holdout_X = feat_dfs[holdout_ds]['X']
+        print('\nFitting cross-val model for feature set', fset_i, 'with', datalen, 'minutes data')
+        print(len(features), 'in feature set', fset_i)
+        train_feats = [f for f in features if f in train_X.columns]
+        print(len(train_feats), 'features left after removing any not found in this data length')
+        result = model_selection.cross_validate(gs, train_X[train_feats], train_y, cv=xval,
+                                                verbose=2, scoring=scoring)
+        print(result)
+        train_results.append(train_X[['STUDENTID']].copy())
+        train_results[-1]['holdout'] = 0
+        train_results[-1]['feature_set'] = fset_i
+        train_results[-1]['data_length'] = datalen
+        train_results[-1]['kappa_mean'] = np.mean(result['test_Kappa'])
+        train_results[-1]['kappa_min'] = np.min(result['test_Kappa'])
+        train_results[-1]['auc_mean'] = np.mean(result['test_AUC'])
+        train_results[-1]['auc_min'] = np.min(result['test_AUC'])
+        print('\nHoldout model for feature set', fset_i, 'with', datalen, 'minutes data')
+        probs = gs.fit(train_X[train_feats], train_y).predict_proba(holdout_X[train_feats]).T[1]
+        print('Grid search best estimator:', gs.best_estimator_)
+        print('Grid search scorer:', gs.scorer_)
+        print('Grid search best score:', gs.best_score_)
+        print('Train data positive class base rate:', np.mean(train_y))
+        print('Predicted base rate (> .5 threshold):', np.mean(probs > .5))
+        for pid, pred in zip(holdout_X.STUDENTID.values, probs):
+            hidden_result.loc[hidden_result.STUDENTID == pid, 'pred'] = pred
+            hidden_result.loc[hidden_result.STUDENTID == pid, 'data_length'] = datalen
+    train_results.append(hidden_result)
+    pd.concat(train_results, ignore_index=True, sort=False) \
+        .to_csv('model_fe-' + str(fset_i) + '.csv', index=False)
