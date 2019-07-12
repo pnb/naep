@@ -1,5 +1,6 @@
 # Feature engineering
 
+# TODO: Finish implementing feature ideas
 # Feature ideas (doubly-indented are implemented):
 #       Time spent in each item (AccessionNumber)
 #       Time spent in each item >= 5th percentile as calculated from full data
@@ -8,7 +9,10 @@
 #   Num of each type of action (Observable)
 #       SD of time spent across items
 #       Num times entered each item
-#   Ordering behaviors (straight through vs. skipping problems) -- related to num navigations
+#   Similarity of ordering to positive-class students, via dOSS or similar
+#   Similarity of actions within each item
+#   Similarity of sequences with new action types engineered, like pauses, calculator use
+#   Find the most popular 1-2 answers for each item and have overlap as feature(s)
 #   Time spent and num actions for each item type (might be too redundant)
 #   WTF behavior, especially at the end of the session (num Next event in last X mins vs. mean)
 #       Coefficients of polynomials fit to time spent per problem
@@ -73,10 +77,11 @@ freq_actions = freq_actions[freq_actions > 2000].index
 item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.05)
                         for i, v in df.groupby('AccessionNumber')}
 X, y, features = extract_features(df, freq_actions, item_5percentile_map)
-features = [f for f in features if not f.startswith('poly_')]  # Exclude for now TODO: See if including increases prediction correlations with TSFresh model
 print(len(features), 'features:', features)
 
-fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, verbose=1)
+# TODO: get uncorrellated feature sets using all train+holdout data
+fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, remove_perfect_corr=True,
+                                            verbose=1)
 
 # Set up model training parameters
 m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
@@ -102,7 +107,7 @@ print('Loading holdout data')
 dfs = {
     'train_10m': load_data.train_10m(),
     'train_20m': load_data.train_20m(),
-    'train_full': df,
+    'train_full': load_data.train_full(),
     'holdout_10m': load_data.holdout_10m(),
     'holdout_20m': load_data.holdout_20m(),
     'holdout_30m': load_data.holdout_30m(),
@@ -114,7 +119,7 @@ for dsname in dfs:
     feat_dfs[dsname] = {'X': tx, 'y': ty}
 
 # Train model on all data and make predictions for competition hold-out set
-for fset_i, features in enumerate(fsets[:2]):
+for fset_i, features in enumerate(fsets[:5]):
     hidden_result = pd.read_csv('public_data/hidden_label.csv')
     hidden_result['holdout'] = 1
     hidden_result['feature_set'] = fset_i
