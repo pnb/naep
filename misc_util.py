@@ -1,3 +1,7 @@
+from collections import Counter
+import json
+import re
+
 from scipy import stats
 import pandas as pd
 import numpy as np
@@ -62,6 +66,70 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
                 result.append(current_set)
             break  # No correlations larger than max allowed, no remaining features to check
     return result
+
+
+def final_answers_from_df(df):
+    """Extract the final answer given to each question/sub-question by a student, given a Pandas
+    DataFrame with sequences of actions from one or more students. This could be used to get the
+    answer to a specific attempt for a specific student as well, by inputting a DataFrame with only
+    data from that attempt.
+
+    Args:
+        df (pd.DataFrame): Sequence or subsequence of actions, e.g., from load_data.train_full()
+
+    Returns:
+        dict: Mapping of STUDENTID -> question/sub-question ID -> answer
+    """
+    answers = {}
+    for i, row in df.iterrows():
+        if row.STUDENTID not in answers:
+            answers[row.STUDENTID] = {}
+        if row.ItemType in ['MultipleFillInBlank', 'FillInBlank', 'CompositeCR']:
+            if row.Observable == 'Receive Focus':
+                subq = row.ExtendedInfo.replace('Part ', '').replace(', 1', ',1')  # Fix VH139196
+            elif row.Observable == 'Math Keypress' or row.Observable == 'Equation Editor Button':
+                answer = json.loads(row.ExtendedInfo)['contentLaTeX']
+                answer = re.sub(r'(\.0*\$|\$|\\| |mathrm\{\w*\}|overline\{\})', '', answer)
+                try:  # Parse fractions (ambitious...)
+                    answer = re.sub(r'frac\{(-?\d+)\}\{(-?\d+)\}',
+                                    lambda m: str(float(m.group(1)) /
+                                                  float(m.group(2))).lstrip('0'), answer)
+                except:
+                    pass  # Cannot even begin to imagine the parsing errors
+                answer = re.sub(r'^0\.', '.', answer)  # Leading 0 for decimals < 1
+                answer = re.sub(r'(?<=\.)0$', '', answer)  # Unnecessary trailing decimal zeros
+                answer = answer.replace('^circ', '')
+            elif row.Observable == 'Lose Focus':
+                answers[row.STUDENTID][row.AccessionNumber + '_' + subq] = answer
+        elif row.ItemType == 'MCSS':
+            if row.Observable == 'Click Choice':
+                answers[row.STUDENTID][row.AccessionNumber] = \
+                    row.ExtendedInfo[:row.ExtendedInfo.index(':')]
+        elif row.ItemType == 'MatchMS ':
+            if row.Observable == 'DropChoice':  # e.g., [{'source': '3', 'target': 1}, ...]
+                for answer_pair in json.loads(row.ExtendedInfo):
+                    subq_id, answer = answer_pair['source'], answer_pair['target']
+                    answers[row.STUDENTID][row.AccessionNumber + '_' + subq_id] = answer
+    return answers
+
+
+def answer_counts(answers):
+    """Rank the most popular answers to a question, given a per-student mapping of answers to
+    questions from final_answers_from_df()
+
+    Args:
+        answers (dict): Mapping of student answers to questions, from final_answers_from_df()
+
+    Returns:
+        dict: Mapping of question/sub-question ID -> collections.Counter of answers
+    """
+    # Reformat as answers at the question level instead of student level
+    questions = {q: Counter() for q in set(qid for pid_map in answers.values() for qid in pid_map)}
+    for question in questions:
+        for pid_answers in answers.values():
+            if question in pid_answers:
+                questions[question][pid_answers[question]] += 1
+    return questions
 
 
 if __name__ == '__main__':
