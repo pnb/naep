@@ -41,7 +41,7 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map):
     for pid, pid_df in tqdm(pandas_df.groupby('STUDENTID')):
         rows.append(OrderedDict({
             'STUDENTID': pid,
-            'label': pid_df.label.iloc[0] if 'label' in pid_df.columns else '',
+            'label': pid_df.label.iloc[0] if 'label' in pid_df.columns else None,
             **{'sec_spent_' + e: v.delta_time_ms.sum() / 1000
                for e, v in pid_df.groupby('AccessionNumber')},
             **{'times_entered_' + e: sum(v.Observable == 'Enter Item')
@@ -64,22 +64,22 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map):
                     rows[-1]['poly_' + ts_name + '_deg' + str(poly_degree) + '_coeff' + str(i)] = c
     X = pd.DataFrame.from_records(rows)
     for col in X:
-        X.loc[X[col].isnull(), col] = 0
+        if col != 'label':
+            X.loc[X[col].isnull(), col] = 0
     y = X.label if 'label' in pandas_df.columns else None
     features = [f for f in X.columns if f not in ['STUDENTID', 'label']]
     return X, y, features
 
 
 print('Loading data')
-df = load_data.train_full()
+df = load_data.all_unique_rows()
 freq_actions = df.Observable.value_counts()
-freq_actions = freq_actions[freq_actions > 2000].index
+freq_actions = freq_actions[freq_actions >= 2464].index  # Average at least once per student
 item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.05)
                         for i, v in df.groupby('AccessionNumber')}
 X, y, features = extract_features(df, freq_actions, item_5percentile_map)
 print(len(features), 'features:', features)
 
-# TODO: get uncorrellated feature sets using all train+holdout data
 fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, remove_perfect_corr=True,
                                             verbose=1)
 
@@ -100,6 +100,8 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 
 # print('Fitting feature importance model')
+# X = X[y.notnull()]
+# y = y[y.notnull()].astype(bool)
 # imp = gs.fit(X[features], y).best_estimator_.named_steps['model'].feature_importances_
 # print('\n'.join([f + ':\t' + str(i) for i, f in sorted(zip(imp, features), reverse=True)]))
 
@@ -129,14 +131,16 @@ for fset_i, features in enumerate(fsets[:5]):
                                           (30, 'train_full', 'holdout_30m')]:
         train_X, train_y = feat_dfs[train_ds]['X'], feat_dfs[train_ds]['y']
         holdout_X = feat_dfs[holdout_ds]['X']
+        # First cross-validate on training data to test accuracy on local (non-LB) data
         print('\nFitting cross-val model for feature set', fset_i, 'with', datalen, 'minutes data')
         print(len(features), 'in feature set', fset_i)
         train_feats = [f for f in features if f in train_X.columns]
         print(len(train_feats), 'features left after removing any not found in this data length')
         result = model_selection.cross_validate(gs, train_X[train_feats], train_y, cv=xval,
-                                                verbose=2, scoring=scoring)
-        print(result)
+                                                verbose=2, scoring=scoring, return_estimator=True)
+        print('\n'.join([k + ': ' + str(v) for k, v in result.items() if k.startswith('test_')]))
         train_results.append(train_X[['STUDENTID']].copy())
+        train_results[-1]['label'] = train_X.label if 'label' in train_X.columns else ''
         train_results[-1]['holdout'] = 0
         train_results[-1]['feature_set'] = fset_i
         train_results[-1]['data_length'] = datalen
@@ -144,6 +148,13 @@ for fset_i, features in enumerate(fsets[:5]):
         train_results[-1]['kappa_min'] = np.min(result['test_Kappa'])
         train_results[-1]['auc_mean'] = np.mean(result['test_AUC'])
         train_results[-1]['auc_min'] = np.min(result['test_AUC'])
+        # Save cross-validated predictions for training set, for later fusion tests
+        for i, (_, test_i) in enumerate(xval.split(train_X, train_y)):
+            test_pids = train_X.STUDENTID.loc[test_i]
+            test_preds = result['estimator'][i].predict_proba(train_X[train_feats].loc[test_i]).T[1]
+            for pid, pred in zip(test_pids, test_preds):
+                train_results[-1].loc[train_results[-1].STUDENTID == pid, 'pred'] = pred
+        # Fit on all training data and apply to holdout data
         print('\nHoldout model for feature set', fset_i, 'with', datalen, 'minutes data')
         probs = gs.fit(train_X[train_feats], train_y).predict_proba(holdout_X[train_feats]).T[1]
         print('Grid search best estimator:', gs.best_estimator_)

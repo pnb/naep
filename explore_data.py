@@ -1,8 +1,11 @@
+from pprint import pprint
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 import load_data
+import misc_util
 
 
 plt.style.use('nigel.mplstyle')
@@ -88,3 +91,27 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 #     else:
 #         match += 1
 # print(match, 'sequences matched;', mismatch, 'did not')
+
+# What are the most popular answer(s) for each problem? What prop. students agree?
+# Answer values for ItemType values:
+# For MultipleFillInBlank:
+#     Receive Focus (Observable) happens, with question num in ExtendedInfo
+#     Math Keypress (Observable) happens, with ""contentLaTeX"":""$63$"" and other in ExtendedInfo
+#     Equation Editor Button (Observable) may happen instead of Math Keypress
+#     Lose Focus (Observable) happens, with question num in ExtendedInfo
+# For FillInBlank:
+#     Same as MultipleFillInBlank, except question num is always 1
+# For CompositeCR:
+#     Receive Focus (Observable) happens with question ID, just like MultipleFillInBlank
+#     Equation Editor Button (Observable) happens, with contentLaTeX like MultipleFillInBlank
+#     Lose Focus (Observable) happens, with question num in ExtendedInfo
+# For MCSS:
+#     Click Choice (Observable) happens with option selected in ExtendedInfo before colon
+# For MatchMS : -- note the space
+#     DropChoice (Observable) happens; the last time it has the student's answer in ExtendedInfo
+all_df = load_data.all_unique_rows()
+with pd.option_context('display.max_rows', None):
+    print(all_df.groupby(['ItemType', 'Observable']).size())
+answers = misc_util.final_answers_from_df(all_df)
+questions = misc_util.answer_counts(answers)
+pprint(questions)

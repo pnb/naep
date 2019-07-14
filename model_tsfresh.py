@@ -1,7 +1,7 @@
 # TSFresh automatic timeseries feature extraction
 
 # Possible timeseries:
-#   Time delta between actions (i.e., action duration)
+#   Time delta between actions (i.e., action duration)  TODO: Try collapse actions within 100ms of each other
 #   Item duration
 import logging
 

@@ -12,6 +12,8 @@ VALIDITY_REGEX = r'^(\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*,){1231}\s*0*((
 plt.style.use('nigel.mplstyle')
 
 
+# TODO: normalize predictions across folds, and change decision threshold to maybe improve kappa -- the kappa step can be done first, by changing predictions to fit expected base rate (0.6038961038961039)
+
 model_fe = pd.read_csv('model_fe-0.csv')
 model_fe = model_fe[model_fe.holdout == 1]
 model_tsfresh = pd.read_csv('model_tsfresh.csv')
