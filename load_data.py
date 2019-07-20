@@ -29,7 +29,7 @@ def train_full():
         df = pd.read_csv('public_data/data_a_train.csv')
         label_df = pd.read_csv('public_data/data_train_label.csv')
         assert len(df.STUDENTID.unique()) == len(label_df.STUDENTID.unique())
-        gt = {p: l for p, l in label_df.values}
+        gt = {p: int(l) for p, l in label_df.values}
         df['label'] = [gt[p] for p in df.STUDENTID.values]
         df_cache['train_full'] = _preprocess(df)
     return df_cache['train_full'].copy()
