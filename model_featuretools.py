@@ -176,28 +176,47 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 
 
-# Build models for some of the feature sets (a few of the less correlated, mostly larger ones)
+# Build models for some of the feature sets (larger ones)
 for fset_i, features in enumerate(feature_sets[:10]):
-    print('\nFitting cross-validated model for feature set', fset_i)
-    X = dfs['train_full']
-    y = dfs['train_full'].label
-    result = model_selection.cross_validate(gs, X[features], y, cv=xval, verbose=2, scoring=scoring)
-    print(result)
-
-    # Train model on all data and make predictions for competition hold-out set
-    print('Fitting holdout models')
-    # TODO: like FE models need to do, Add c-v predictions for training data above, plus perf metrics, to enable better fusion later
-    hidden_result = pd.read_csv('public_data/hidden_label.csv', index_col='STUDENTID')
-    hidden_result['pred'] = ''
-    hidden_result['data_length'] = ''
+    hidden_result = pd.read_csv('public_data/hidden_label.csv')
+    hidden_result['holdout'] = 1
+    hidden_result['feature_set'] = fset_i
+    train_results = []
     for datalen, train_df, holdout_df in [(10, dfs['train_10m'], dfs['holdout_10m']),
                                           (20, dfs['train_20m'], dfs['holdout_20m']),
                                           (30, dfs['train_full'], dfs['holdout_30m'])]:
-        print('Training/applying holdout model for', datalen, 'minutes data')
+        # First cross-validate on training data to test accuracy on local (non-LB) data
+        print('\nFitting cross-val model for feature set', fset_i, 'with', datalen, 'minutes data')
+        print(len(features), 'in feature set', fset_i)
+        result = model_selection.cross_validate(gs, train_df[features], train_df.label, cv=xval,
+                                                verbose=2, scoring=scoring, return_estimator=True)
+        print('\n'.join([k + ': ' + str(v) for k, v in result.items() if k.startswith('test_')]))
+        train_results.append(train_df[['STUDENTID']].copy())
+        train_results[-1]['label'] = train_df.label if 'label' in train_df.columns else ''
+        train_results[-1]['holdout'] = 0
+        train_results[-1]['feature_set'] = fset_i
+        train_results[-1]['data_length'] = datalen
+        train_results[-1]['kappa_mean'] = np.mean(result['test_Kappa'])
+        train_results[-1]['kappa_min'] = np.min(result['test_Kappa'])
+        train_results[-1]['auc_mean'] = np.mean(result['test_AUC'])
+        train_results[-1]['auc_min'] = np.min(result['test_AUC'])
+        # Save cross-validated predictions for training set, for later fusion tests
+        for i, (_, test_i) in enumerate(xval.split(train_df, train_df.label)):
+            test_pids = train_df.STUDENTID.loc[test_i]
+            test_preds = result['estimator'][i].predict_proba(train_df[features].loc[test_i]).T[1]
+            for pid, pred in zip(test_pids, test_preds):
+                train_results[-1].loc[train_results[-1].STUDENTID == pid, 'pred'] = pred
+        # Fit on all training data and apply to holdout data
+        print('\nHoldout model for feature set', fset_i, 'with', datalen, 'minutes data')
         probs = gs.fit(train_df[features], train_df.label).predict_proba(holdout_df[features]).T[1]
-        hidden_result.loc[holdout_df.STUDENTID, 'pred'] = probs
-        hidden_result.loc[holdout_df.STUDENTID, 'data_length'] = datalen
         print('Grid search best estimator:', gs.best_estimator_)
         print('Grid search scorer:', gs.scorer_)
         print('Grid search best score:', gs.best_score_)
-    hidden_result.to_csv('model_featuretools-' + str(fset_i) + '.csv')  # 0-4 are >0 kappa 4-fold
+        print('Train data positive class base rate:', train_df.label.mean())
+        print('Predicted base rate (> .5 threshold):', np.mean(probs > .5))
+        for pid, pred in zip(holdout_df.STUDENTID.values, probs):
+            hidden_result.loc[hidden_result.STUDENTID == pid, 'pred'] = pred
+            hidden_result.loc[hidden_result.STUDENTID == pid, 'data_length'] = datalen
+    train_results.append(hidden_result)
+    pd.concat(train_results, ignore_index=True, sort=False) \
+        .to_csv('model_featuretools-' + str(fset_i) + '.csv', index=False)
