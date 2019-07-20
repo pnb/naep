@@ -24,9 +24,7 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
     """
     # Pairwise Spearman's rho correlation matrix with self-correlations set to 0
     rho = pd.DataFrame(index=pandas_df.columns, columns=pandas_df.columns, dtype=float)
-    if verbose > 0:
-        print('Computing pairwise correlations')
-    for i, a in enumerate(tqdm(pandas_df.columns, disable=not verbose)):
+    for i, a in enumerate(tqdm(pandas_df.columns, desc='Pairwise corr', disable=not verbose)):
         for b in pandas_df.columns:
             if np.isnan(rho.at[a, b]):
                 if a == b:
@@ -68,7 +66,7 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
     return result
 
 
-def final_answers_from_df(df):
+def final_answers_from_df(df, verbose=0):
     """Extract the final answer given to each question/sub-question by a student, given a Pandas
     DataFrame with sequences of actions from one or more students. This could be used to get the
     answer to a specific attempt for a specific student as well, by inputting a DataFrame with only
@@ -76,17 +74,19 @@ def final_answers_from_df(df):
 
     Args:
         df (pd.DataFrame): Sequence or subsequence of actions, e.g., from load_data.train_full()
+        verbose (int): Verbosity level
 
     Returns:
         dict: Mapping of STUDENTID -> question/sub-question ID -> answer
     """
     answers = {}
-    for i, row in df.iterrows():
+    for _, row in tqdm(df.iterrows(), desc='Getting answers', disable=not verbose, total=len(df)):
         if row.STUDENTID not in answers:
             answers[row.STUDENTID] = {}
         if row.ItemType in ['MultipleFillInBlank', 'FillInBlank', 'CompositeCR']:
             if row.Observable == 'Receive Focus':
                 subq = row.ExtendedInfo.replace('Part ', '').replace(', 1', ',1')  # Fix VH139196
+                answer = ''
             elif row.Observable == 'Math Keypress' or row.Observable == 'Equation Editor Button':
                 answer = json.loads(row.ExtendedInfo)['contentLaTeX']
                 answer = re.sub(r'(\.0*\$|\$|\\| |mathrm\{\w*\}|overline\{\})', '', answer)
@@ -130,6 +130,29 @@ def answer_counts(answers):
             if question in pid_answers:
                 questions[question][pid_answers[question]] += 1
     return questions
+
+
+def answer_ranks(question_answer_counts):
+    """Rank the popularity of answers to a single question, given a collections.Counter of answers
+    to the question (e.g., one of the items obtained from answer_counts()). Ranking begins at 1
+    (the most popular answer), and ties are counted as the same rank.
+
+    Args:
+        question_answer_counts (collections.Counter): Counter of answers to a question
+
+    Returns:
+        dict: Mapping of answer -> rank
+    """
+    assert type(question_answer_counts) == Counter
+    ranks = {}
+    unique_counts = 0
+    last_count = None
+    for ans, count in question_answer_counts.most_common():
+        if last_count is None or count < last_count:
+            unique_counts += 1
+            last_count = count
+        ranks[ans] = unique_counts
+    return ranks
 
 
 if __name__ == '__main__':
