@@ -51,7 +51,7 @@ docutils==0.14
 entrypoints==0.2.3
 et-xmlfile==1.0.1
 fastcache==1.0.2
-featuretools==0.9.0
+featuretools==0.9.1
 filelock==3.0.10
 Flask==1.0.2
 Flask-Cors==3.0.7
@@ -182,6 +182,7 @@ qtconsole==4.4.3
 QtPy==1.5.2
 requests==2.21.0
 rope==0.11.0
+rpy2==3.0.4
 ruamel-yaml==0.15.46
 scikit-image==0.14.1
 scikit-learn==0.21.1
@@ -216,7 +217,7 @@ toolz==0.9.0
 tornado==5.1.1
 tqdm==4.28.1
 traitlets==4.3.2
-tsfresh==0.11.2
+tsfresh==0.12.0
 typing==3.6.6
 unicodecsv==0.14.1
 unidip==0.1.1

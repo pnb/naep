@@ -16,7 +16,11 @@ plt.style.use('nigel.mplstyle')
 
 model_fe = pd.read_csv('model_fe-0.csv')
 model_fe = model_fe[model_fe.holdout == 1]
+model_fe1 = pd.read_csv('model_fe-1.csv')
+model_fe1 = model_fe1[model_fe1.holdout == 1]
+model_fe.pred = .75 * model_fe.pred + .25 * model_fe1.pred  # Excel guesswork ("human in the loop")
 model_tsfresh = pd.read_csv('model_tsfresh.csv')
+# model_tsfresh = model_tsfresh[model_tsfresh.holdout == 1]
 model_featuretools = pd.read_csv('model_featuretools-0.csv')
 model_featuretools = model_featuretools[model_featuretools.holdout == 1]
 print('FE <=> TSFresh r =', model_fe.pred.corr(model_tsfresh.pred))
@@ -29,7 +33,7 @@ print('FE <=> Featuretools rho =', model_fe.pred.corr(model_featuretools.pred, m
 # Select the best models and fuse only those
 models = []
 for fname in sorted(os.listdir('.')):
-    if fname.startswith('model_featuretools') and fname.endswith('.csv'):
+    if fname.startswith('model_fe') and fname.endswith('.csv'):
         models.append(pd.read_csv(fname))
 for data_len in sorted(models[0].data_length.unique()):
     votes = []
@@ -49,10 +53,10 @@ exit()
 '''
 
 # Adjust predictions so predicted rate matches base rate for each data length
-for data_len in [10, 20, 30]:
-    len_df = model_fe[model_fe.data_length == data_len]
-    thresh = len_df.pred.quantile(1 - 0.6038961038961039)
-    model_fe.loc[len_df.index, 'pred'] = [v / 3 if v < thresh else v / 3 + .5 for v in len_df.pred]
+# for data_len in [10, 20, 30]:
+#     len_df = model_fe[model_fe.data_length == data_len]
+#     thresh = len_df.pred.quantile(1 - 0.6038961038961039)
+#     model_fe.loc[len_df.index, 'pred'] = [v / 3 if v < thresh else v / 3 + .5 for v in len_df.pred]
 
 df = model_fe
 preds = ','.join(df.pred.astype(str))
