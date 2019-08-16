@@ -12,7 +12,9 @@
 #   Similarity of ordering to positive-class students, via dOSS or similar
 #   Similarity of actions within each item
 #   Similarity of sequences with new action types engineered, like pauses, calculator use
-#   Find the most popular 1-2 answers for each item and have overlap as feature(s)
+#       Rank of popularity of answers to questions
+#       Count of top-k ranked answers for different k
+#       Count of unanswered questions
 #   Time spent and num actions for each item type (might be too redundant)
 #   WTF behavior, especially at the end of the session (num Next event in last X mins vs. mean)
 #       Coefficients of polynomials fit to time spent per problem
@@ -32,13 +34,14 @@ RANDOM_SEED = 11798
 CACHE_DIR = '/Users/pnb/sklearn_cache'
 
 
-def extract_features(pandas_df, freq_actions, item_5percentile_map):
+def extract_features(pandas_df, freq_actions, item_5percentile_map, question_answer_counts):
     # freq_actions is a list of common actions that should be dummy-coded
     # item_5percentile_map is a mapping of item_name -> 5th percentile of time spent (ms) for item
+    # question_answer_counts is a mapping of question ID -> Counter of answers
     # Returns (X, y, list of feature names); y may be None if `label` is not in `pandas_df`
-    print('Extracting features')
     rows = []
-    for pid, pid_df in tqdm(pandas_df.groupby('STUDENTID')):
+    answer_ranks = {q: misc_util.answer_ranks(c) for q, c in question_answer_counts.items()}
+    for pid, pid_df in tqdm(pandas_df.groupby('STUDENTID'), desc='Extracting features'):
         rows.append(OrderedDict({
             'STUDENTID': pid,
             'label': pid_df.label.iloc[0] if 'label' in pid_df.columns else None,
@@ -62,12 +65,24 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map):
             for poly_degree in range(4):
                 for i, c in enumerate(np.polyfit(np.arange(len(ts)), ts, poly_degree)):
                     rows[-1]['poly_' + ts_name + '_deg' + str(poly_degree) + '_coeff' + str(i)] = c
+        # Popularity of answers to questions
+        answers = misc_util.final_answers_from_df(pid_df)[pid]
+        for q_id, counts in question_answer_counts.items():
+            if q_id not in answers or answers[q_id] == '':
+                rows[-1]['answer_rank_' + q_id] = 1000
+            elif answers[q_id] in answer_ranks[q_id]:  # Known answer
+                rows[-1]['answer_rank_' + q_id] = answer_ranks[q_id][answers[q_id]]
+            else:  # Unknown answer; must be from partial training data with a changed answer later
+                rows[-1]['answer_rank_' + q_id] = max(answer_ranks[q_id].values()) + 1
+        ranks = np.array([v for col, v in rows[-1].items() if col.startswith('answer_rank_')])
+        for k in range(1, 6):  # Ranks start at 1
+            rows[-1]['answer_count_top' + str(k)] = (ranks <= k).sum()
+        rows[-1]['answer_count_unanswered'] = (ranks == 1000).sum()
     X = pd.DataFrame.from_records(rows)
-    for col in X:
-        if col != 'label':
-            X.loc[X[col].isnull(), col] = 0
-    y = X.label if 'label' in pandas_df.columns else None
     features = [f for f in X.columns if f not in ['STUDENTID', 'label']]
+    for col in features:
+        X.loc[X[col].isnull(), col] = 0
+    y = X.label if 'label' in pandas_df.columns else None
     return X, y, features
 
 
@@ -77,7 +92,10 @@ freq_actions = df.Observable.value_counts()
 freq_actions = freq_actions[freq_actions >= 2464].index  # Average at least once per student
 item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.05)
                         for i, v in df.groupby('AccessionNumber')}
-X, y, features = extract_features(df, freq_actions, item_5percentile_map)
+student_answers = misc_util.final_answers_from_df(df, verbose=1)
+question_answer_counts = misc_util.answer_counts(student_answers)
+X, y, features = extract_features(df, freq_actions, item_5percentile_map, question_answer_counts)
+features = [f for f in features if not f.startswith('answer_rank_')]  # TODO: Answer features are garbage for now, esp. w/30minutes data
 print(len(features), 'features:', features)
 
 fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, remove_perfect_corr=True,
@@ -117,7 +135,8 @@ dfs = {
 feat_dfs = {}
 for dsname in dfs:
     print('\nFeatures for', dsname)
-    tx, ty, _ = extract_features(dfs[dsname], freq_actions, item_5percentile_map)
+    tx, ty, _ = extract_features(dfs[dsname], freq_actions, item_5percentile_map,
+                                 question_answer_counts)
     feat_dfs[dsname] = {'X': tx, 'y': ty}
 
 # Train model on all data and make predictions for competition hold-out set

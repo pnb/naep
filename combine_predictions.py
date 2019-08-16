@@ -18,7 +18,7 @@ model_fe = pd.read_csv('model_fe-0.csv')
 model_fe = model_fe[model_fe.holdout == 1]
 model_fe1 = pd.read_csv('model_fe-1.csv')
 model_fe1 = model_fe1[model_fe1.holdout == 1]
-model_fe.pred = .75 * model_fe.pred + .25 * model_fe1.pred  # Excel guesswork ("human in the loop")
+# model_fe.pred = .75 * model_fe.pred + .25 * model_fe1.pred  # Excel guesswork ("human in the loop")
 model_tsfresh = pd.read_csv('model_tsfresh.csv')
 # model_tsfresh = model_tsfresh[model_tsfresh.holdout == 1]
 model_featuretools = pd.read_csv('model_featuretools-0.csv')
