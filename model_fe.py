@@ -19,6 +19,7 @@
 #   WTF behavior, especially at the end of the session (num Next event in last X mins vs. mean)
 #       Coefficients of polynomials fit to time spent per problem
 #       Coefficients of polynomials fit to overall timeseries
+# TODO: Train decision tree model and do error analysis to inspire possible new features
 from collections import OrderedDict
 
 import pandas as pd
@@ -95,7 +96,7 @@ item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.
 student_answers = misc_util.final_answers_from_df(df, verbose=1)
 question_answer_counts = misc_util.answer_counts(student_answers)
 X, y, features = extract_features(df, freq_actions, item_5percentile_map, question_answer_counts)
-features = [f for f in features if not f.startswith('answer_rank_')]  # TODO: Answer features are garbage for now, esp. w/30minutes data
+features = [f for f in features if not f.startswith('answer_')]  # TODO: Answer features are garbage for now, esp. w/30minutes data
 print(len(features), 'features:', features)
 
 fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, remove_perfect_corr=True,
