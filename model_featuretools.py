@@ -203,7 +203,7 @@ for fset_i, features in enumerate(feature_sets[:10]):
         # Save cross-validated predictions for training set, for later fusion tests
         for i, (_, test_i) in enumerate(xval.split(train_df, train_df.label)):
             test_pids = train_df.STUDENTID.loc[test_i]
-            test_preds = result['estimator'][i].predict_proba(train_df[features].loc[test_i]).T[1]
+            test_preds = result['estimator'][i].predict_proba(train_df[features].iloc[test_i]).T[1]
             for pid, pred in zip(test_pids, test_preds):
                 train_results[-1].loc[train_results[-1].STUDENTID == pid, 'pred'] = pred
         # Fit on all training data and apply to holdout data

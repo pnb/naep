@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import jensenshannon
 from sklearn import metrics
+import numpy as np
 
 
 VALIDITY_REGEX = r'^(\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*,){1231}\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*$'
@@ -18,7 +19,7 @@ model_fe = pd.read_csv('model_fe-0.csv')
 model_fe = model_fe[model_fe.holdout == 1]
 model_fe1 = pd.read_csv('model_fe-1.csv')
 model_fe1 = model_fe1[model_fe1.holdout == 1]
-model_fe.pred = .9 * model_fe.pred + .1 * model_fe1.pred  # Excel guesswork ("human in the loop")
+# model_fe.pred = .9 * model_fe.pred + .1 * model_fe1.pred  # Excel guesswork ("human in the loop")
 model_tsfresh = pd.read_csv('model_tsfresh.csv')
 # model_tsfresh = model_tsfresh[model_tsfresh.holdout == 1]
 model_featuretools = pd.read_csv('model_featuretools-0.csv')
@@ -86,3 +87,17 @@ plt.title('10m pred. rate: %.3f, 20m pred. rate: %.3f, 30m pred. rate: %.3f' %
 plt.xlabel('Predicted probability')
 plt.ylabel('Count')
 plt.show()
+
+# Plot kappa over decision thresholds
+# TODO: Try modify predictions to use the best threshold
+model_fe = pd.read_csv('model_fe-0.csv')
+model_fe = model_fe[model_fe.holdout == 0]
+kappas = [metrics.cohen_kappa_score(model_fe.label, model_fe.pred > t)
+          for t in np.linspace(0, 1, 101)]
+plt.figure()
+plt.plot(np.linspace(0, 1, len(kappas)), kappas)
+plt.show()
+print('Maximum kappa =', max(kappas))
+thresh = np.argmax(kappas) / (len(kappas) - 1)
+print('At threshold =', thresh)
+print('Holdout predicted rate at that threshold =', (df.pred > thresh).mean())

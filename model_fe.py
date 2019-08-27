@@ -96,10 +96,10 @@ item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.
 student_answers = misc_util.final_answers_from_df(df, verbose=1)
 question_answer_counts = misc_util.answer_counts(student_answers)
 X, y, features = extract_features(df, freq_actions, item_5percentile_map, question_answer_counts)
-features = [f for f in features if not f.startswith('answer_')]  # TODO: Answer features are garbage for now, esp. w/30minutes data
+features = [f for f in features if not f.startswith('answer_rank_')]  # TODO: Answer features are garbage for now, esp. w/30minutes data
 print(len(features), 'features:', features)
 
-fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.5, remove_perfect_corr=True,
+fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.6, remove_perfect_corr=True,
                                             verbose=1)
 
 # Set up model training parameters
@@ -171,7 +171,8 @@ for fset_i, features in enumerate(fsets[:5]):
         # Save cross-validated predictions for training set, for later fusion tests
         for i, (_, test_i) in enumerate(xval.split(train_X, train_y)):
             test_pids = train_X.STUDENTID.loc[test_i]
-            test_preds = result['estimator'][i].predict_proba(train_X[train_feats].loc[test_i]).T[1]
+            test_preds = result['estimator'][i].predict_proba(
+                train_X[train_feats].iloc[test_i]).T[1]
             for pid, pred in zip(test_pids, test_preds):
                 train_results[-1].loc[train_results[-1].STUDENTID == pid, 'pred'] = pred
         # Fit on all training data and apply to holdout data
