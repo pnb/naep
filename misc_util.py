@@ -119,6 +119,8 @@ def final_answers_from_df(df, verbose=0):
 def answer_counts(answers):
     """Rank the most popular answers to a question, given a per-student mapping of answers to
     questions from final_answers_from_df()
+    TODO: Make this into an expectation maximization problem instead to find source reliability, and
+          then also return source (student) reliability as a possible feature
 
     Args:
         answers (dict): Mapping of student answers to questions, from final_answers_from_df()
@@ -181,8 +183,7 @@ def tree_error_analysis(X, y, cv, class_names, output_filename_prefix):
                                  class_names=class_names, feature_names=X.columns, filled=True)
             subprocess.call(['dot', '-Tpng', dotfile, '-o',
                             output_filename_prefix + 'fold' + str(fold_i) + '.png', '-Gdpi=300'])
-    err_df.to_csv(output_filename_prefix + 'leaves.csv')
-    return res
+    return res, err_df
 
 
 if __name__ == '__main__':
