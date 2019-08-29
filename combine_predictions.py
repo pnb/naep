@@ -21,7 +21,7 @@ model_fe1 = pd.read_csv('model_fe-1.csv')
 model_fe1 = model_fe1[model_fe1.holdout == 1]
 # model_fe.pred = .9 * model_fe.pred + .1 * model_fe1.pred  # Excel guesswork ("human in the loop")
 model_tsfresh = pd.read_csv('model_tsfresh.csv')
-# model_tsfresh = model_tsfresh[model_tsfresh.holdout == 1]
+model_tsfresh = model_tsfresh[model_tsfresh.holdout == 1]
 model_featuretools = pd.read_csv('model_featuretools-0.csv')
 model_featuretools = model_featuretools[model_featuretools.holdout == 1]
 print('FE <=> TSFresh r =', model_fe.pred.corr(model_tsfresh.pred))
@@ -59,7 +59,7 @@ exit()
 #     thresh = len_df.pred.quantile(1 - 0.6038961038961039)
 #     model_fe.loc[len_df.index, 'pred'] = [v / 3 if v < thresh else v / 3 + .5 for v in len_df.pred]
 
-df = model_fe
+df = model_tsfresh
 preds = ','.join(df.pred.astype(str))
 assert re.match(VALIDITY_REGEX, preds)
 
