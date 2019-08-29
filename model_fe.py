@@ -118,9 +118,16 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 
+X = X[y.notnull()]
+y = y[y.notnull()].astype(bool)
+
+# print('Fitting simple error analysis model')
+# res, err_df = misc_util.tree_error_analysis(X[fsets[0]], y, xval, ['good', 'bad'], 'model_fe_dt_')
+# print(res)
+# err_df.join(X).to_csv('model_fe_dt_leaves.csv')
+# exit()
+
 # print('Fitting feature importance model')
-# X = X[y.notnull()]
-# y = y[y.notnull()].astype(bool)
 # imp = gs.fit(X[features], y).best_estimator_.named_steps['model'].feature_importances_
 # print('\n'.join([f + ':\t' + str(i) for i, f in sorted(zip(imp, features), reverse=True)]))
 
