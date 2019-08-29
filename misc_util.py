@@ -1,11 +1,15 @@
 from collections import Counter
 import json
 import re
+import tempfile
+import os
+import subprocess
 
 from scipy import stats
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from sklearn import model_selection, metrics, tree
 
 
 def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, verbose=0):
@@ -25,12 +29,11 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
     # Pairwise Spearman's rho correlation matrix with self-correlations set to 0
     rho = pd.DataFrame(index=pandas_df.columns, columns=pandas_df.columns, dtype=float)
     for i, a in enumerate(tqdm(pandas_df.columns, desc='Pairwise corr', disable=not verbose)):
-        for b in pandas_df.columns:
-            if np.isnan(rho.at[a, b]):
-                if a == b:
-                    rho.at[a, b] = 0
-                else:
-                    rho.at[a, b] = rho.at[b, a] = stats.spearmanr(pandas_df[a], pandas_df[b])[0]
+        for b in pandas_df.columns[i:]:
+            if a == b:
+                rho.at[a, b] = 0
+            else:
+                rho.at[a, b] = rho.at[b, a] = stats.spearmanr(pandas_df[a], pandas_df[b])[0]
     if rho.isnull().sum().sum() > 0:
         raise ValueError('Correlation matrix had NaN values; check that there are no missing values'
                          ' in inputs, and that each input feature has some variance')
@@ -153,6 +156,33 @@ def answer_ranks(question_answer_counts):
             last_count = count
         ranks[ans] = unique_counts
     return ranks
+
+
+def tree_error_analysis(X, y, cv, class_names, output_filename_prefix):
+    assert len(class_names) == len(np.unique(y)), 'There must be one class name per class'
+    scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
+               'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
+               'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
+    m = tree.DecisionTreeClassifier(min_samples_leaf=8)
+    res = model_selection.cross_validate(m, X, y, scoring=scoring, verbose=1, cv=cv,
+                                         return_estimator=True)
+    err_df = pd.DataFrame(index=X.index, data={'pred': '', 'truth': y, 'fold': '', 'leaf_size': ''})
+    for fold_i, (_, test_i) in enumerate(tqdm(cv.split(X, y), desc='Graphing trees')):
+        err_df.pred.iloc[test_i] = res['estimator'][fold_i].predict_proba(X.iloc[test_i]).T[1]
+        err_df.fold.iloc[test_i] = fold_i
+        # Graph trees, look for the most impure large leaves -- in the tree graphs or in a pivot
+        # table filtered by truth value looking for common wrong predicted probabilities
+        leaf_i = res['estimator'][fold_i].apply(X.iloc[test_i])
+        leaf_sizes = np.bincount(leaf_i)  # Array with leaf index -> number of occurrences
+        err_df.leaf_size.iloc[test_i] = [leaf_sizes[i] for i in leaf_i]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dotfile = os.path.join(tmpdir, 'tree.dot')
+            tree.export_graphviz(res['estimator'][fold_i], out_file=dotfile,
+                                 class_names=class_names, feature_names=X.columns, filled=True)
+            subprocess.call(['dot', '-Tpng', dotfile, '-o',
+                            output_filename_prefix + 'fold' + str(fold_i) + '.png', '-Gdpi=300'])
+    err_df.to_csv(output_filename_prefix + 'leaves.csv')
+    return res
 
 
 if __name__ == '__main__':
