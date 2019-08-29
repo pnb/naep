@@ -163,7 +163,7 @@ def tree_error_analysis(X, y, cv, class_names, output_filename_prefix):
     scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
                'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
                'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
-    m = tree.DecisionTreeClassifier(min_samples_leaf=8)
+    m = tree.DecisionTreeClassifier(min_samples_leaf=8, random_state=11798)
     res = model_selection.cross_validate(m, X, y, scoring=scoring, verbose=1, cv=cv,
                                          return_estimator=True)
     err_df = pd.DataFrame(index=X.index, data={'pred': '', 'truth': y, 'fold': '', 'leaf_size': ''})
