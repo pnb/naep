@@ -19,7 +19,6 @@ model_fe = pd.read_csv('model_fe-0.csv')
 model_fe = model_fe[model_fe.holdout == 1]
 model_fe1 = pd.read_csv('model_fe-1.csv')
 model_fe1 = model_fe1[model_fe1.holdout == 1]
-# model_fe.pred = .9 * model_fe.pred + .1 * model_fe1.pred  # Excel guesswork ("human in the loop")
 model_tsfresh = pd.read_csv('model_tsfresh.csv')
 model_tsfresh = model_tsfresh[model_tsfresh.holdout == 1]
 model_featuretools = pd.read_csv('model_featuretools-0.csv')
@@ -59,7 +58,9 @@ exit()
 #     thresh = len_df.pred.quantile(1 - 0.6038961038961039)
 #     model_fe.loc[len_df.index, 'pred'] = [v / 3 if v < thresh else v / 3 + .5 for v in len_df.pred]
 
-df = model_tsfresh
+# model_fe.pred = .9 * model_fe.pred + .1 * model_fe1.pred  # Excel guesswork ("human in the loop")
+model_fe.pred = .5 * model_fe.pred + .5 * model_featuretools.pred
+df = model_fe
 preds = ','.join(df.pred.astype(str))
 assert re.match(VALIDITY_REGEX, preds)
 
@@ -74,7 +75,6 @@ print('JSD 20 <=> 30:', jensenshannon(df[df.data_length == 20].pred.iloc[:-1],
                                       df[df.data_length == 30].pred))
 
 # Plot to show if distributions across the three combined datasets are notably different
-plt.figure(figsize=(8, 6))
 plt.hist(df[df.data_length == 10].pred, bins=50, alpha=.5, label='10 minutes')
 plt.hist(df[df.data_length == 20].pred, bins=50, alpha=.5, label='20 minutes')
 plt.hist(df[df.data_length == 30].pred, bins=50, alpha=.5, label='30 minutes')
@@ -88,6 +88,7 @@ plt.xlabel('Predicted probability')
 plt.ylabel('Count')
 plt.show()
 
+'''
 # Plot kappa over decision thresholds
 # TODO: Try modify predictions to use the best threshold
 model_fe = pd.read_csv('model_fe-0.csv')
@@ -101,3 +102,4 @@ print('Maximum kappa =', max(kappas))
 thresh = np.argmax(kappas) / (len(kappas) - 1)
 print('At threshold =', thresh)
 print('Holdout predicted rate at that threshold =', (df.pred > thresh).mean())
+'''
