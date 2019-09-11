@@ -59,7 +59,7 @@ exit()
 #     model_fe.loc[len_df.index, 'pred'] = [v / 3 if v < thresh else v / 3 + .5 for v in len_df.pred]
 
 # model_fe.pred = .9 * model_fe.pred + .1 * model_fe1.pred  # Excel guesswork ("human in the loop")
-model_fe.pred = .5 * model_fe.pred + .5 * model_featuretools.pred
+# model_fe.pred = .5 * model_fe.pred + .5 * model_featuretools.pred
 df = model_fe
 preds = ','.join(df.pred.astype(str))
 assert re.match(VALIDITY_REGEX, preds)

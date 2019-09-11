@@ -19,7 +19,6 @@
 #   WTF behavior, especially at the end of the session (num Next event in last X mins vs. mean)
 #       Coefficients of polynomials fit to time spent per problem
 #       Coefficients of polynomials fit to overall timeseries
-# TODO: Train decision tree model and do error analysis to inspire possible new features
 from collections import OrderedDict
 
 import pandas as pd
@@ -145,6 +144,18 @@ for dsname in dfs:
     print('\nFeatures for', dsname)
     tx, ty, _ = extract_features(dfs[dsname], freq_actions, item_5percentile_map,
                                  question_answer_counts)
+    if dsname in ['train_full', 'holdout_30m']:  # Extract additional features from last 5 minutes
+        print('Features from the last five minutes of data')
+        last5 = dfs[dsname]
+        ms_end = last5.groupby('STUDENTID').time_unix.max()
+        last5_start = pd.Series([ms_end[pid] - 5 * 60 * 1000 for pid in last5.STUDENTID],
+                                index=last5.index)
+        last5 = last5[last5.time_unix > last5_start]
+        last5x, _, _ = extract_features(last5, freq_actions, item_5percentile_map,
+                                        question_answer_counts)
+        for f in features:
+            if f in last5x:
+                tx[f + '_last5'] = last5x[f]
     feat_dfs[dsname] = {'X': tx, 'y': ty}
 
 # Train model on all data and make predictions for competition hold-out set
@@ -163,6 +174,10 @@ for fset_i, features in enumerate(fsets[:5]):
         print(len(features), 'in feature set', fset_i)
         train_feats = [f for f in features if f in train_X.columns]
         print(len(train_feats), 'features left after removing any not found in this data length')
+        if datalen == 30:
+            train_feats.extend([f + '_last5' for f in train_feats
+                                if f + '_last5' in train_X and f + '_last5' in holdout_X])
+            print(len(train_feats), 'features after adding in last-five-minutes features')
         result = model_selection.cross_validate(gs, train_X[train_feats], train_y, cv=xval,
                                                 verbose=2, scoring=scoring, return_estimator=True)
         print('\n'.join([k + ': ' + str(v) for k, v in result.items() if k.startswith('test_')]))

@@ -103,7 +103,10 @@ def final_answers_from_df(df, verbose=0):
                 answer = re.sub(r'(?<=\.)0$', '', answer)  # Unnecessary trailing decimal zeros
                 answer = answer.replace('^circ', '')
             elif row.Observable == 'Lose Focus':
-                answers[row.STUDENTID][row.AccessionNumber + '_' + subq] = answer
+                try:
+                    answers[row.STUDENTID][row.AccessionNumber + '_' + subq] = answer
+                except UnboundLocalError:  # subq not defined
+                    pass  # Can only happen with incomplete data (e.g., for last 5 minutes of data)
         elif row.ItemType == 'MCSS':
             if row.Observable == 'Click Choice':
                 answers[row.STUDENTID][row.AccessionNumber] = \
