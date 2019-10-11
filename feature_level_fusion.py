@@ -1,4 +1,6 @@
 # Load/combine extracted feature sets, remove highly correlated features, and build models
+from collections import OrderedDict
+
 import pandas as pd
 import numpy as np
 from sklearn import ensemble, pipeline, model_selection, metrics
@@ -11,7 +13,7 @@ RANDOM_SEED = 11798
 CACHE_DIR = '/Users/pnb/sklearn_cache'
 
 
-print('Loading labels and original data')
+print('Loading labels from original data')
 label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
 
 # Set up model training parameters
@@ -32,6 +34,7 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
 
 # Build models
 hidden_result = pd.read_csv('public_data/hidden_label.csv')
+train_result = []
 for datalen in ['10m', '20m', '30m']:
     print('Processing data length', datalen)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
@@ -52,9 +55,14 @@ for datalen in ['10m', '20m', '30m']:
 
     # First cross-validate on training data to test accuracy on local (non-LB) data
     print('\nFitting cross-val model for', datalen, 'data')
-    result = model_selection.cross_validate(gs, train_df[features], train_y, cv=xval,
-                                            verbose=2, scoring=scoring, return_estimator=True)
-    print('\n'.join([k + ': ' + str(v) for k, v in result.items() if k.startswith('test_')]))
+    preds = model_selection.cross_val_predict(gs, train_df[features], train_y, cv=xval, verbose=2,
+                                              method='predict_proba').T[1]
+    print('AUC =', metrics.roc_auc_score(train_y, preds))
+    print('Kappa =', metrics.cohen_kappa_score(train_y, preds > .5))
+    print('MCC =', metrics.matthews_corrcoef(train_y, preds > .5))
+    for pid, truth, pred in zip(train_df.STUDENTID.values, train_y, preds):
+        train_result.append(OrderedDict({'STUDENTID': pid, 'label': truth, 'pred': pred,
+                                         'data_length': datalen}))
 
     # Fit on all training data and apply to holdout data
     print('\nFitting holdout model for', datalen, 'data')
@@ -69,3 +77,4 @@ for datalen in ['10m', '20m', '30m']:
         hidden_result.loc[hidden_result.STUDENTID == pid, 'data_length'] = datalen
 
 hidden_result.to_csv('feature_level_fusion.csv', index=False)
+pd.DataFrame.from_records(train_result).to_csv('feature_level_fusion-train.csv', index=False)

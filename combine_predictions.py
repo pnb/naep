@@ -90,12 +90,10 @@ plt.xlabel('Predicted probability')
 plt.ylabel('Count')
 plt.show()
 
-'''
 # Plot kappa over decision thresholds
-# TODO: Try modify predictions to use the best threshold
-model_fe = pd.read_csv('model_fe-0.csv')
-model_fe = model_fe[model_fe.holdout == 0]
-kappas = [metrics.cohen_kappa_score(model_fe.label, model_fe.pred > t)
+# TODO: See how ideal decision threshold varies across training folds/data lengths
+train_preds = pd.read_csv('feature_level_fusion-train.csv')
+kappas = [metrics.cohen_kappa_score(train_preds.label, train_preds.pred > t)
           for t in np.linspace(0, 1, 101)]
 plt.figure()
 plt.plot(np.linspace(0, 1, len(kappas)), kappas)
@@ -104,4 +102,10 @@ print('Maximum kappa =', max(kappas))
 thresh = np.argmax(kappas) / (len(kappas) - 1)
 print('At threshold =', thresh)
 print('Holdout predicted rate at that threshold =', (df.pred > thresh).mean())
-'''
+
+preds = ','.join((df.pred / thresh / 2).astype(str))
+print(((df.pred - thresh).abs() < .0001).sum(), 'predictions at exactly threshold')
+assert re.match(VALIDITY_REGEX, preds)
+
+with open('combine_predictions.txt', 'w') as outfile:
+    outfile.write(preds)
