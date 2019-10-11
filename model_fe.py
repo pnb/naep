@@ -51,7 +51,7 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map, question_ans
                for e, v in pid_df.groupby('AccessionNumber')},
             **{'num_actions_' + e: len(v) for e, v in pid_df.groupby('AccessionNumber')},
             **{'count_' + e: len(v) for e, v in pid_df.groupby('Observable') if e in freq_actions},
-            **{'percentile5_' + e: v.delta_time_ms.sum() >= item_5percentile_map[e]
+            **{'percentile5_' + e: int(v.delta_time_ms.sum() >= item_5percentile_map[e])
                for e, v in pid_df.groupby('AccessionNumber')},
         }))
         rows[-1]['percentile5_vh_count'] = \
@@ -94,12 +94,6 @@ item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.
                         for i, v in df.groupby('AccessionNumber')}
 student_answers = misc_util.final_answers_from_df(df, verbose=1)
 question_answer_counts = misc_util.answer_counts(student_answers)
-X, y, features = extract_features(df, freq_actions, item_5percentile_map, question_answer_counts)
-features = [f for f in features if not f.startswith('answer_rank_')]  # TODO: Answer features are garbage for now, esp. w/30minutes data
-print(len(features), 'features:', features)
-
-fsets = misc_util.uncorrelated_feature_sets(X[features], max_rho=.6, remove_perfect_corr=True,
-                                            verbose=1)
 
 # Set up model training parameters
 m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
@@ -117,9 +111,6 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 
-X = X[y.notnull()]
-y = y[y.notnull()].astype(bool)
-
 # print('Fitting simple error analysis model')
 # res, err_df = misc_util.tree_error_analysis(X[fsets[0]], y, xval, ['good', 'bad'], 'model_fe_dt_')
 # print(res)
@@ -134,17 +125,19 @@ print('Loading holdout data')
 dfs = {
     'train_10m': load_data.train_10m(),
     'train_20m': load_data.train_20m(),
-    'train_full': load_data.train_full(),
+    'train_30m': load_data.train_full(),
     'holdout_10m': load_data.holdout_10m(),
     'holdout_20m': load_data.holdout_20m(),
     'holdout_30m': load_data.holdout_30m(),
 }
 feat_dfs = {}
+feat_ys = {}
 for dsname in dfs:
     print('\nFeatures for', dsname)
-    tx, ty, _ = extract_features(dfs[dsname], freq_actions, item_5percentile_map,
-                                 question_answer_counts)
-    if dsname in ['train_full', 'holdout_30m']:  # Extract additional features from last 5 minutes
+    tx, ty, feat_names = extract_features(dfs[dsname], freq_actions, item_5percentile_map,
+                                          question_answer_counts)
+    feat_ys[dsname] = ty
+    if dsname.endswith('30m'):  # Extract additional features from last 5 minutes
         print('Features from the last five minutes of data')
         last5 = dfs[dsname]
         ms_end = last5.groupby('STUDENTID').time_unix.max()
@@ -153,10 +146,34 @@ for dsname in dfs:
         last5 = last5[last5.time_unix > last5_start]
         last5x, _, _ = extract_features(last5, freq_actions, item_5percentile_map,
                                         question_answer_counts)
-        for f in features:
+        for f in feat_names:
             if f in last5x:
                 tx[f + '_last5'] = last5x[f]
-    feat_dfs[dsname] = {'X': tx, 'y': ty}
+        feat_names.extend([f for f in tx if f.endswith('_last5')])
+    feat_names = [f for f in feat_names if not f.startswith('answer_rank_')]  # TODO: Some answer features are garbage for now, esp. w/30minutes data
+    feat_names = [f for f in feat_names if len(tx[f].unique()) > 1]  # Remove 0-variance features
+    print(len(feat_names), 'features')
+    fsets = misc_util.uncorrelated_feature_sets(tx[feat_names], max_rho=.8,
+                                                remove_perfect_corr=True, verbose=1)
+    print(len(fsets[0]), 'features after removing highly-correlated features')
+    feat_dfs[dsname] = tx[['STUDENTID'] + fsets[0]]
+
+for datalen in ['10m', '20m', '30m']:
+    print('Building feature importance model for', datalen)
+    train_X, train_y = feat_dfs['train_' + datalen], feat_ys['train_' + datalen]
+    holdout_X = feat_dfs['holdout_' + datalen]
+    feat_names = [f for f in train_X if f in holdout_X.columns and f != 'STUDENTID']
+    print(len(feat_names), 'features after keeping only matching train/holdout features')
+
+    imp_m = gs.fit(train_X[feat_names], train_y).best_estimator_
+    importances = pd.Series(imp_m.named_steps['model'].feature_importances_, index=feat_names)
+    # Pick only important features and save
+    feat_names = [f for f in feat_names if importances[f] > .001]
+    print(len(feat_names), 'features after keeping only important features')
+    train_X[['STUDENTID'] + feat_names].to_csv('features_fe/train_' + datalen + '.csv', index=False)
+    holdout_X[['STUDENTID'] + feat_names].to_csv(
+        'features_fe/holdout_' + datalen + '.csv', index=False)
+exit()
 
 # Train model on all data and make predictions for competition hold-out set
 for fset_i, features in enumerate(fsets[:5]):
