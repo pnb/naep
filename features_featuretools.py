@@ -16,7 +16,7 @@ def extract_ft_features():
     # Combine all dataframes so that features will be consistent across them
     dfs = []
     dfs.append(load_data.train_full())
-    dfs[-1]['STUDENTID'] = [str(p) + '_train_full' for p in dfs[-1].STUDENTID]
+    dfs[-1]['STUDENTID'] = [str(p) + '_train_30m' for p in dfs[-1].STUDENTID]
     dfs.append(load_data.train_10m())
     dfs[-1]['STUDENTID'] = [str(p) + '_train_10m' for p in dfs[-1].STUDENTID]
     dfs.append(load_data.train_20m())
@@ -47,13 +47,13 @@ def extract_ft_features():
     es = es.normalize_entity('rows', 'items', 'AccessionNumber', additional_variables=['ItemType'])
     print('\n', es)
     print('\n', es['rows'].variables)
-    es.plot('featuretools_data/entity_structure.png')
+    es.plot('features_featuretools/entity_structure.png')
     es.add_interesting_values(max_values=10, verbose=True)
     es['rows']['AccessionNumber'].interesting_values = \
         [v for v in es['rows'].df.AccessionNumber.unique() if v.startswith('VH')]
 
     # Basically all the primitives that seemed to make any sense -- there may be more!
-    ft.list_primitives().to_csv('featuretools_data/ft_primitives.csv', index=False)
+    ft.list_primitives().to_csv('features_featuretools/ft_primitives.csv', index=False)
     aggregation_primitives = [
         'max',
         'median',
@@ -90,7 +90,7 @@ def extract_ft_features():
                                           where_primitives=aggregation_primitives)
     # One-hot encode categorical features where needed
     feature_matrix_enc, features_defs_enc = ft.encode_features(feature_matrix, feature_defs)
-    ft.save_features(features_defs_enc, 'featuretools_data/feature_defs.json')
+    ft.save_features(features_defs_enc, 'features_featuretools/feature_defs.json')
     print(len(features_defs_enc), 'features after one-hot encoding')
     # Re-split features into appropriate train/holdout sets
     print('Saving features files')
@@ -98,17 +98,19 @@ def extract_ft_features():
     for pid in feature_matrix_enc.index.unique():
         feature_matrix_enc.at[pid, 'source_file'] = pid[pid.index('_') + 1:]
     for source_file, feat_df in feature_matrix_enc.groupby('source_file'):
-        feat_df.index = [p[:p.index('_')] for p in feat_df.index]  # STUDENTID back to normal
-        feat_df.to_csv('featuretools_data/' + source_file + '.csv')
+        # STUDENTID back to normal
+        feat_df.insert(0, 'STUDENTID', [p[:p.index('_')] for p in feat_df.index])
+        feat_df.to_csv('features_featuretools/ft_' + source_file + '.csv', index=False)
 
 
 def unsupervised_feature_selection():
     # This is based on the non-overlapping datasets, including holdout data, so that the process
     # will hopefully generalize as well as possible to the holdout data
-    df = pd.concat([pd.read_csv('featuretools_data/' + f, index_col=0) for f in
-                    ['train_full.csv', 'holdout_10m.csv', 'holdout_20m.csv', 'holdout_30m.csv']]) \
+    df = pd.concat([pd.read_csv('features_featuretools/' + f, index_col=0) for f in
+                    ['ft_train_30m.csv', 'ft_holdout_10m.csv', 'ft_holdout_20m.csv',
+                     'ft_holdout_30m.csv']]) \
         .reset_index(drop=True).replace([np.inf, -np.inf], np.nan).fillna(0)
-    features = [f for f in df if f != 'source_file']
+    features = [f for f in df if f != 'source_file' and f != 'STUDENTID']
     num_features_before = len(features)
     for col in list(features):
         if df[col].nunique() < len(df) * .05:
@@ -116,9 +118,9 @@ def unsupervised_feature_selection():
     print('Removed', num_features_before - len(features), 'features with little variance')
     print(num_features_before, 'features initially')
     print(len(features), 'left after removing those with little variance')
-    fsets = misc_util.uncorrelated_feature_sets(df[features], max_rho=.5, verbose=1,
+    fsets = misc_util.uncorrelated_feature_sets(df[features], max_rho=.8, verbose=1,
                                                 remove_perfect_corr=True)
-    with open('featuretools_data/uncorrelated_feature_sets.txt', 'w') as outfile:
+    with open('features_featuretools/uncorrelated_feature_sets.txt', 'w') as outfile:
         for fset in fsets:
             outfile.write(';'.join(fset) + '\n')
             assert ';' not in ''.join(fset), 'Feature name has a semicolon in it'
@@ -129,23 +131,21 @@ def load_final_data():
     # Return a tuple with dictionary of dataframes for train/holdout data, and a list of
     # uncorrelated feature sets (a list of lists)
     dfs = {
-        'train_10m': pd.read_csv('featuretools_data/train_10m.csv', index_col=0),
-        'train_20m': pd.read_csv('featuretools_data/train_20m.csv', index_col=0),
-        'train_full': pd.read_csv('featuretools_data/train_full.csv', index_col=0),
-        'holdout_10m': pd.read_csv('featuretools_data/holdout_10m.csv', index_col=0),
-        'holdout_20m': pd.read_csv('featuretools_data/holdout_20m.csv', index_col=0),
-        'holdout_30m': pd.read_csv('featuretools_data/holdout_30m.csv', index_col=0),
+        'train_10m': pd.read_csv('features_featuretools/ft_train_10m.csv'),
+        'train_20m': pd.read_csv('features_featuretools/ft_train_20m.csv'),
+        'train_30m': pd.read_csv('features_featuretools/ft_train_30m.csv'),
+        'holdout_10m': pd.read_csv('features_featuretools/ft_holdout_10m.csv'),
+        'holdout_20m': pd.read_csv('features_featuretools/ft_holdout_20m.csv'),
+        'holdout_30m': pd.read_csv('features_featuretools/ft_holdout_30m.csv'),
     }
     # Add in labels, make STUDENTID a column again
     train_labels = pd.read_csv('public_data/data_train_label.csv', index_col='STUDENTID')
     for k, df in dfs.items():
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
         df.fillna(0, inplace=True)
-        df.insert(0, 'STUDENTID', df.index)
-        df.reset_index(drop=True, inplace=True)
         if 'train_' in k:
             df['label'] = [train_labels.loc[p].EfficientlyCompletedBlockB for p in df.STUDENTID]
-    with open('featuretools_data/uncorrelated_feature_sets.txt') as infile:
+    with open('features_featuretools/uncorrelated_feature_sets.txt') as infile:
         fsets = [l.strip().split(';') for l in infile]
     return dfs, fsets
 
@@ -159,7 +159,7 @@ def load_final_data():
 print('Loading feature sets')
 dfs, feature_sets = load_final_data()
 
-# Set up model
+# Set up feature importance model
 m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
 grid = {
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
@@ -171,52 +171,19 @@ pipe = pipeline.Pipeline([
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
-           'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
-           'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
 
-
-# Build models for some of the feature sets (larger ones)
-for fset_i, features in enumerate(feature_sets[:10]):
-    hidden_result = pd.read_csv('public_data/hidden_label.csv')
-    hidden_result['holdout'] = 1
-    hidden_result['feature_set'] = fset_i
-    train_results = []
-    for datalen, train_df, holdout_df in [(10, dfs['train_10m'], dfs['holdout_10m']),
-                                          (20, dfs['train_20m'], dfs['holdout_20m']),
-                                          (30, dfs['train_full'], dfs['holdout_30m'])]:
-        # First cross-validate on training data to test accuracy on local (non-LB) data
-        print('\nFitting cross-val model for feature set', fset_i, 'with', datalen, 'minutes data')
-        print(len(features), 'in feature set', fset_i)
-        result = model_selection.cross_validate(gs, train_df[features], train_df.label, cv=xval,
-                                                verbose=2, scoring=scoring, return_estimator=True)
-        print('\n'.join([k + ': ' + str(v) for k, v in result.items() if k.startswith('test_')]))
-        train_results.append(train_df[['STUDENTID']].copy())
-        train_results[-1]['label'] = train_df.label if 'label' in train_df.columns else ''
-        train_results[-1]['holdout'] = 0
-        train_results[-1]['feature_set'] = fset_i
-        train_results[-1]['data_length'] = datalen
-        train_results[-1]['kappa_mean'] = np.mean(result['test_Kappa'])
-        train_results[-1]['kappa_min'] = np.min(result['test_Kappa'])
-        train_results[-1]['auc_mean'] = np.mean(result['test_AUC'])
-        train_results[-1]['auc_min'] = np.min(result['test_AUC'])
-        # Save cross-validated predictions for training set, for later fusion tests
-        for i, (_, test_i) in enumerate(xval.split(train_df, train_df.label)):
-            test_pids = train_df.STUDENTID.loc[test_i]
-            test_preds = result['estimator'][i].predict_proba(train_df[features].iloc[test_i]).T[1]
-            for pid, pred in zip(test_pids, test_preds):
-                train_results[-1].loc[train_results[-1].STUDENTID == pid, 'pred'] = pred
-        # Fit on all training data and apply to holdout data
-        print('\nHoldout model for feature set', fset_i, 'with', datalen, 'minutes data')
-        probs = gs.fit(train_df[features], train_df.label).predict_proba(holdout_df[features]).T[1]
-        print('Grid search best estimator:', gs.best_estimator_)
-        print('Grid search scorer:', gs.scorer_)
-        print('Grid search best score:', gs.best_score_)
-        print('Train data positive class base rate:', train_df.label.mean())
-        print('Predicted base rate (> .5 threshold):', np.mean(probs > .5))
-        for pid, pred in zip(holdout_df.STUDENTID.values, probs):
-            hidden_result.loc[hidden_result.STUDENTID == pid, 'pred'] = pred
-            hidden_result.loc[hidden_result.STUDENTID == pid, 'data_length'] = datalen
-    train_results.append(hidden_result)
-    pd.concat(train_results, ignore_index=True, sort=False) \
-        .to_csv('model_featuretools-' + str(fset_i) + '.csv', index=False)
+# Build feature importance models and save important features
+for datalen in ['10m', '20m', '30m']:
+    print('Processing data length', datalen)
+    train_df, holdout_df = dfs['train_' + datalen], dfs['holdout_' + datalen]
+    feat_names = feature_sets[0]
+    print(len(feat_names), 'features')
+    imp_m = gs.fit(train_df[feat_names], train_df.label).best_estimator_
+    importances = pd.Series(imp_m.named_steps['model'].feature_importances_, index=feat_names)
+    # Pick only important features and save
+    feat_names = [f for f in feat_names if importances[f] > .001]
+    print(len(feat_names), 'features after keeping only important features')
+    train_df[['STUDENTID'] + feat_names].to_csv(
+        'features_featuretools/train_' + datalen + '.csv', index=False)
+    holdout_df[['STUDENTID'] + feat_names].to_csv(
+        'features_featuretools/holdout_' + datalen + '.csv', index=False)

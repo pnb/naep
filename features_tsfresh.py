@@ -60,9 +60,6 @@ gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 
 # Extract features and save the most important ones
-hidden_result = pd.read_csv('public_data/hidden_label.csv')
-hidden_result['holdout'] = 1
-train_results = []
 for datalen, train_df, holdout_df in [(10, load_data.train_10m(), load_data.holdout_10m()),
                                       (20, load_data.train_20m(), load_data.holdout_20m()),
                                       (30, load_data.train_full(), load_data.holdout_30m())]:

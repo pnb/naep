@@ -1,7 +1,11 @@
 # Some data that should not be shared in a repo
 public_data
 nn_data
-featuretools_data
+features_featuretools/*.csv
+features_featuretools/*.json
+features_featuretools/*.txt
+features_tsfresh/*.csv
+features_fe/*.csv
 tmp.*
 
 .DS_Store
