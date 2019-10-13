@@ -1,5 +1,5 @@
 # Some data that should not be shared in a repo
-public_data
+public_data/*.csv
 nn_data
 features_featuretools/*.csv
 features_featuretools/*.json
