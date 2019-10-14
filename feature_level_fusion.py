@@ -39,7 +39,7 @@ for datalen in ['10m', '20m', '30m']:
     print('Processing data length', datalen)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')
-    for fset in ['tsfresh']:
+    for fset in ['tsfresh', 'featuretools']:
         tdf = pd.read_csv('features_' + fset + '/train_' + datalen + '.csv')
         hdf = pd.read_csv('features_' + fset + '/holdout_' + datalen + '.csv')
         feat_names = [f for f in tdf if f not in train_df.columns]
@@ -47,7 +47,7 @@ for datalen in ['10m', '20m', '30m']:
         holdout_df[feat_names] = hdf[feat_names]
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
-    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.7,
+    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
                                                 remove_perfect_corr=True, verbose=1)
     features = fsets[0]
     print(len(features), 'features after removing highly correlated features')
