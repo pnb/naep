@@ -4,6 +4,7 @@ from collections import OrderedDict
 import pandas as pd
 import numpy as np
 from sklearn import ensemble, pipeline, model_selection, metrics
+import xgboost
 
 import load_data
 import misc_util
@@ -18,9 +19,14 @@ label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterr
 
 # Set up model training parameters
 m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+m = xgboost.XGBClassifier(max_depth=3, learning_rate=.1, n_estimators=100, random_state=RANDOM_SEED, gamma=0, subsample=1, colsample_bytree=1, colsample_bylevel=1, colsample_bynode=1, reg_alpha=0, reg_lambda=1)
 grid = {
-    'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
+    # 'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
+    # 'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
+
+    'model__max_depth': [1, 2, 3, 4],  # XGBoost
+    'model__learning_rate': [.05, .1, .2, .3],
+    'model__n_estimators': [25, 50, 100, 200],
 }
 pipe = pipeline.Pipeline([
     ('model', m),
