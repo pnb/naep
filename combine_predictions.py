@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.distance import jensenshannon
 from sklearn import metrics
 import numpy as np
+from tqdm import tqdm
 
 
 VALIDITY_REGEX = r'^(\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*,){1231}\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*$'
@@ -39,23 +40,27 @@ plt.xlabel('Predicted probability')
 plt.ylabel('Count')
 plt.show()
 
-# Plot kappa over decision thresholds
-# TODO: See how ideal decision threshold varies across training folds/data lengths
+# Rescale predictions to try improve kappa
 train_preds = pd.read_csv('feature_level_fusion-train.csv')
-kappas = [metrics.cohen_kappa_score(train_preds.label, train_preds.pred > t)
-          for t in np.linspace(0, 1, 101)]
 plt.figure()
-plt.plot(np.linspace(0, 1, len(kappas)), kappas)
+for datalen, dldf in train_preds.groupby('data_length'):
+    # Plot kappa over decision thresholds
+    kappas = [metrics.cohen_kappa_score(dldf.label, dldf.pred > t)
+              for t in tqdm(np.linspace(0, 1, 501), desc='Calculating kappas')]
+    plt.plot(np.linspace(0, 1, len(kappas)), kappas, label=datalen + ' max = %.3f' % max(kappas))
+    # Adjust predictions to match ideal threshold
+    thresh = np.argmax(kappas) / (len(kappas) - 1)
+    print(datalen, 'ideal threshold =', thresh)
+    dfpreds = df[df.data_length == datalen].pred
+    print('Holdout predicted rate at that threshold =', (dfpreds > thresh).mean())
+    print(((dfpreds - thresh).abs() < .0001).sum(), datalen, 'predictions at exactly threshold')
+    assert thresh <= .5, 'Rescaling equation will not work with threshold > .5'
+    df.loc[dfpreds.index, 'pred'] = dfpreds / thresh / 2
+plt.legend(loc='upper left')
 plt.show()
-print('Maximum kappa =', max(kappas))
-thresh = np.argmax(kappas) / (len(kappas) - 1)
-print('At threshold =', thresh)
-print('Holdout predicted rate at that threshold =', (df.pred > thresh).mean())
 
-# Adjust and save predictions
-preds = ','.join((df.pred / thresh / 2).astype(str))
-print(((df.pred - thresh).abs() < .0001).sum(), 'predictions at exactly threshold')
+# Save predictions
+preds = ','.join(df.pred.astype(str))
 assert re.match(VALIDITY_REGEX, preds)
-
 with open('combine_predictions.txt', 'w') as outfile:
     outfile.write(preds)
