@@ -46,7 +46,7 @@ plt.figure()
 for datalen, dldf in train_preds.groupby('data_length'):
     # Plot kappa over decision thresholds
     kappas = [metrics.cohen_kappa_score(dldf.label, dldf.pred > t)
-              for t in tqdm(np.linspace(0, 1, 501), desc='Calculating kappas')]
+              for t in tqdm(np.linspace(0, 1, 101), desc='Calculating kappas')]
     plt.plot(np.linspace(0, 1, len(kappas)), kappas, label=datalen + ' max = %.3f' % max(kappas))
     # Adjust predictions to match ideal threshold
     thresh = np.argmax(kappas) / (len(kappas) - 1)
@@ -54,7 +54,7 @@ for datalen, dldf in train_preds.groupby('data_length'):
     dfpreds = df[df.data_length == datalen].pred
     print('Holdout predicted rate at that threshold =', (dfpreds > thresh).mean())
     print(((dfpreds - thresh).abs() < .0001).sum(), datalen, 'predictions at exactly threshold')
-    assert thresh <= .5, 'Rescaling equation will not work with threshold > .5'
+    assert thresh >= .5, 'Rescaling equation will not work with threshold < .5'
     df.loc[dfpreds.index, 'pred'] = dfpreds / thresh / 2
 plt.legend(loc='upper left')
 plt.show()
