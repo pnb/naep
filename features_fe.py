@@ -6,7 +6,7 @@
 #       Time spent in each item >= 5th percentile as calculated from full data
 #       Count of VH items where time spent >= 5th percentile
 #       Num actions for each item
-#   Num of each type of action (Observable)
+#       Num of each type of action (Observable)
 #       SD of time spent across items
 #       Num times entered each item
 #   Similarity of ordering to positive-class students, via dOSS or similar
