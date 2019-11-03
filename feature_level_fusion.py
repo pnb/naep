@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn import ensemble, pipeline, model_selection, metrics
 import xgboost
+from mlxtend.feature_selection import SequentialFeatureSelector
 
 import load_data
 import misc_util
@@ -28,10 +29,13 @@ grid = {
     # 'model__learning_rate': [.05, .1, .2, .3],
     # 'model__n_estimators': [25, 50, 100, 200],
 }
+xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 pipe = pipeline.Pipeline([
+    ('sfs', SequentialFeatureSelector(ensemble.ExtraTreesClassifier(50, random_state=RANDOM_SEED),
+                                      k_features=(1, 50), verbose=2, cv=xval,
+                                      scoring=metrics.make_scorer(metrics.cohen_kappa_score))),
     ('model', m),
 ], memory=CACHE_DIR)
-xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
