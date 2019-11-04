@@ -6,8 +6,10 @@ features_featuretools/*.json
 features_featuretools/*.txt
 features_tsfresh/*.csv
 features_fe/*.csv
+features_similarity/*.csv
 tmp.*
 
+.vscode
 .DS_Store
 
 # Byte-compiled / optimized / DLL files

@@ -31,9 +31,9 @@ grid = {
 }
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 pipe = pipeline.Pipeline([
-    ('sfs', SequentialFeatureSelector(ensemble.ExtraTreesClassifier(50, random_state=RANDOM_SEED),
-                                      k_features=(1, 50), verbose=2, cv=xval,
-                                      scoring=metrics.make_scorer(metrics.cohen_kappa_score))),
+    # ('sfs', SequentialFeatureSelector(ensemble.ExtraTreesClassifier(50, random_state=RANDOM_SEED),
+    #                                   k_features=(1, 50), verbose=2, cv=xval,
+    #                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))),
     ('model', m),
 ], memory=CACHE_DIR)
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
@@ -46,10 +46,10 @@ scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
 hidden_result = pd.read_csv('public_data/hidden_label.csv')
 train_result = []
 for datalen in ['10m', '20m', '30m']:
-    print('Processing data length', datalen)
+    print('\nProcessing data length', datalen)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')
-    for fset in ['tsfresh', 'featuretools']:
+    for fset in ['tsfresh', 'featuretools', 'similarity']:
         tdf = pd.read_csv('features_' + fset + '/train_' + datalen + '.csv')
         hdf = pd.read_csv('features_' + fset + '/holdout_' + datalen + '.csv')
         feat_names = [f for f in tdf if f not in train_df.columns]

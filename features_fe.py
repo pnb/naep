@@ -9,6 +9,7 @@
 #       Num of each type of action (Observable)
 #       SD of time spent across items
 #       Num times entered each item
+#   Count of items (AccessionNumber) seen/submitted -- always the same? TODO: Check in explore_data.py
 #   Similarity of ordering to positive-class students, via dOSS or similar
 #   Similarity of actions within each item
 #   Similarity of sequences with new action types engineered, like pauses, calculator use
@@ -137,7 +138,6 @@ for dsname in dfs:
             if f in last5x:
                 tx[f + '_last5'] = last5x[f]
         feat_names.extend([f for f in tx if f.endswith('_last5')])
-    # feat_names = [f for f in feat_names if not f.startswith('answer_rank_')]  # TODO: Some answer features are garbage for now, esp. w/30minutes data
     # Remove 0-variance features since they will cause problems for calculating correlations
     feat_names = [f for f in feat_names if len(tx[f].unique()) > 1]
     print(len(feat_names), 'features')
