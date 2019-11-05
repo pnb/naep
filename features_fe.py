@@ -63,6 +63,8 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map, question_ans
         for ts_name, ts in [('delta_sec', pid_df.delta_time_ms.values / 1000),
                             ('per_item_sec', [(v.time_unix.max() - v.time_unix.min()) / 1000
                                               for _, v in pid_df.groupby('AccessionNumber')])]:
+            if len(ts) < 2:
+                continue  # No variance in timeseries, so polyfit will fail
             for poly_degree in range(4):
                 for i, c in enumerate(np.polyfit(np.arange(len(ts)), ts, poly_degree)):
                     rows[-1]['poly_' + ts_name + '_deg' + str(poly_degree) + '_coeff' + str(i)] = c

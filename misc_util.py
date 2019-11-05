@@ -33,7 +33,7 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
             if a == b:
                 rho.at[a, b] = 0
             else:
-                rho.at[a, b] = rho.at[b, a] = stats.spearmanr(pandas_df[a], pandas_df[b])[0]
+                rho.at[a, b] = rho.at[b, a] = abs(stats.spearmanr(pandas_df[a], pandas_df[b])[0])
     if rho.isnull().sum().sum() > 0:
         raise ValueError('Correlation matrix had NaN values; check that there are no missing values'
                          ' in inputs, and that each input feature has some variance')
