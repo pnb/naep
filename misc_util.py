@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, OrderedDict
 import json
 import re
 import tempfile
@@ -164,6 +164,19 @@ def answer_ranks(question_answer_counts):
 
 
 def tree_error_analysis(X, y, cv, class_names, output_filename_prefix):
+    """Train a simple decision tree model and graph it to help find cases where new/better features
+    are needed, or where current features may be behaving unexpectedly.
+
+    Args:
+        X (pd.DataFrame): Training data (column names are required)
+        y (array): Labels for training data
+        cv (int or sklearn cross-validator): Cross-validation method to apply
+        class_names (array): List of labels for class names in ascending order (y=0, y=1, etc.)
+        output_filename_prefix (str): Path + prefix for output graphs
+
+    Returns:
+        (dict, pd.DataFrame): Cross-validation results and predictions
+    """
     assert len(class_names) == len(np.unique(y)), 'There must be one class name per class'
     scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
                'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
@@ -187,6 +200,40 @@ def tree_error_analysis(X, y, cv, class_names, output_filename_prefix):
             subprocess.call(['dot', '-Tpng', dotfile, '-o',
                             output_filename_prefix + 'fold' + str(fold_i) + '.png', '-Gdpi=300'])
     return res, err_df
+
+
+def per_feature_analysis(X, y, cv):
+    """Explore individual feature predictive accuracy for every feature in a dataset, via a simple
+    and fast CART model. This allows finding features that are especially effective and possible
+    inspirations for future features, as well as features that may be severely over-fit to the
+    training data and could need improvement
+
+    Args:
+        X (pd.DataFrame): Training data (columns are required)
+        y (array): Labels for training data
+        cv (int or sklearn cross-validator): Cross-validation method to apply
+
+    Returns:
+        pd.DataFrame: Results for each feature, probably for saving to a CSV file
+    """
+    scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
+               'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
+               'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
+    m = tree.DecisionTreeClassifier(min_samples_leaf=8, random_state=11798)
+    result = []
+    for feat in tqdm(X.columns, desc='Building 1-feature models'):
+        scores = model_selection.cross_validate(m, X[[feat]], y, scoring=scoring, cv=cv,
+                                                return_train_score=True)
+        result.append(OrderedDict({
+            'feature': feat,
+            'mean_test_auc': np.mean(scores['test_AUC']),
+            'mean_test_mcc': np.mean(scores['test_MCC']),
+            'mean_test_kappa': np.mean(scores['test_Kappa']),
+            'mean_train_auc': np.mean(scores['train_AUC']),
+            'mean_train_mcc': np.mean(scores['train_MCC']),
+            'mean_train_kappa': np.mean(scores['train_Kappa']),
+        }))
+    return pd.DataFrame.from_records(result)
 
 
 if __name__ == '__main__':
