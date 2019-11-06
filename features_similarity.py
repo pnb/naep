@@ -3,6 +3,8 @@
 # For different sequences:
 #   AccessionNumber (exercise ID); length ~= 1/minute of data (10, 20 30)
 #   Time spent on AccessionNumber in percentile bins (related to the 5% cutoff); length same
+#   TODO: Time chunk, navigation
+#   TODO: Time chunk * AccessionNumber -- e.g., divide each AccessionNumber into 30s chunks with a leftover chunk and make sequences
 #   TODO: Observable (action); length probably too long
 #   TODO: mean of [distance for Observable within each exercise] -- difficult to implement
 #
@@ -89,9 +91,9 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
         negative_pids = train[train.label == 0].STUDENTID.values
         assert len(positive_pids) > 0 and len(negative_pids) > 0
         for pid in tqdm(combined_df.STUDENTID.unique(), desc='Features for ' + dist_name):
-            # Skip over distance to self, to avoid leaking distance=0 label information
-            dist_pos = [mat[pid][p] for p in positive_pids if p != pid]
-            dist_neg = [mat[pid][p] for p in negative_pids if p != pid]
+            # Include distance to self; otherwise tiny differences leak label info
+            dist_pos = np.array([mat[pid][p] for p in positive_pids])
+            dist_neg = np.array([mat[pid][p] for p in negative_pids])
             if pid not in features:
                 features[pid] = OrderedDict({
                     'STUDENTID': pid,
@@ -112,7 +114,6 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     feat_names = [f for f in features if f != 'STUDENTID' and f != 'label']
 
     print(len(feat_names), 'features extracted')
-    # TODO: Looks like this function has a bug where it does not actually use absolute value! Fix and re-run everything across all files that use it. features_fe, features_featuretools, this, and feature_level_fusion
     fsets = misc_util.uncorrelated_feature_sets(features[feat_names], max_rho=.8,
                                                 remove_perfect_corr=True, verbose=1)
     feat_names = fsets[0]
@@ -122,10 +123,15 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     train_X = features[features.STUDENTID.isin(train.STUDENTID)]
     train_y = train_X.label
     holdout_X = features[features.STUDENTID.isin(holdout.STUDENTID)]
-    imp_m = gs.fit(train_X[feat_names], train_y).best_estimator_
+    imp = gs.fit(train_X[feat_names], train_y)
+    imp_m = imp.best_estimator_
     importances = pd.Series(imp_m.named_steps['model'].feature_importances_, index=feat_names)
+    print(importances)
+    print('Grid search best kappa:', imp.best_score_)
     feat_names = [f for f in feat_names if importances[f] > .001]  # TODO: This cutoff is maybe too low here (only 20 features) since the feature importances add up to 1; probably worth revisiting in other files too
     print(len(feat_names), 'features after keeping only important features')
+    # misc_util.tree_error_analysis(train_X[feat_names], train_y, xval, ['negative', 'positive'],
+    #                               'graphs/seq_similarity_dt_' + datalen + '-')
 
     print('Saving features')
     train_X[['STUDENTID'] + feat_names] \
