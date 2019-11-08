@@ -54,7 +54,7 @@ for datalen in ['10m', '20m', '30m']:
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
     # TODO: Might be able to tune max_rho to get a higher AUC vs. higher kappa for later fusion
-    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
+    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.85,
                                                 remove_perfect_corr=True, verbose=1)
     features = fsets[0]
     print(len(features), 'features after removing highly correlated features')
