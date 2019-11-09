@@ -3,8 +3,9 @@
 # For different sequences:
 #   AccessionNumber (exercise ID); length ~= 1/minute of data (10, 20 30)
 #   Time spent on AccessionNumber in percentile bins (related to the 5% cutoff); length same
-#   TODO: Time chunk, navigation
+#   Time chunk * some activity + navigation; length = datalen / chunk size
 #   TODO: Time chunk * AccessionNumber -- e.g., divide each AccessionNumber into 30s chunks with a leftover chunk and make sequences
+#   TODO: Similarity of sequences with new action types engineered, like pauses, calculator use
 #   TODO: Observable (action); length probably too long
 #   TODO: mean of [distance for Observable within each exercise] -- difficult to implement
 #
@@ -59,7 +60,6 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
 
     # Sequence of time spent per problem in terms of percentiles; somewhat addresses the target
     # label definition of spending at least 5th percentile time on each item
-    # Precalculate these sequences since they can be time-consuming
     seq_percentile = {}
     for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making time spent sequences'):
         starts = df[df.AccessionNumber.shift(1) != df.AccessionNumber].time_unix
@@ -70,11 +70,36 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
             [item_time_quantiles[i][stop - start < item_time_quantiles[i]].index[0]
              for i, start, stop in zip(df.loc[starts.index, 'AccessionNumber'], starts, stops)]
 
+    # Sequences of chunks of time spent editing, reading, nothing, or navigating
+    seq_timechunks = {}
+    # TODO: Are "Next" and "Click Progress Navigator" mutually exlusive, and maybe redundant with Enter Item?
+    # TODO: Leave Section appears redundant with Enter Item as well
+    # TODO: Back and Next might give more info about navigation direction though (but Back is rare)
+    nav_actions = ['Enter Item', 'Next', 'Click Progress Navigator', 'Leave Section', 'Back']
+    read_actions = ['Move Calculator', 'Vertical Item Scroll', 'TextToSpeech', 'Highlight',
+                    'Change Theme', 'Yes', 'OK', 'Hide Timer', 'Show Timer', 'No', 'Decrease Zoom',
+                    'Increase Zoom', 'Horizontal Item Scroll']
+    for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making time chunk sequences'):
+        seq_timechunks[pid] = []
+        for chunk_start in range(df.time_unix.min(), df.time_unix.max(), 30000):
+            chunk_end = chunk_start + 30000
+            chunk = df[(df.time_unix >= chunk_start) & (df.time_unix < chunk_end)]
+            if len(chunk) == 0:
+                seq_timechunks[pid].append(0)  # Nothing
+            elif any(act in chunk.Observable.values for act in nav_actions):
+                seq_timechunks[pid].append(1)  # Navigation
+            elif any(act in chunk.Observable.values for act in read_actions):
+                seq_timechunks[pid].append(2)  # Reading
+            else:
+                seq_timechunks[pid].append(3)  # Editing
+
     # Calculate distance matrices to avoid re-calculation during feature extraction
     accession_dist = {}  # A <-> B distance
     percentile_dist = {}
+    timechunk_dist = {}
     for dist_name, mat, seqs in [('accessiondist', accession_dist, seq_accession),
-                                 ('percentiledist', percentile_dist, seq_percentile)]:
+                                 ('percentiledist', percentile_dist, seq_percentile),
+                                 ('timechunkdist', timechunk_dist, seq_timechunks)]:
         for pida in tqdm(combined_df.STUDENTID.unique(), desc='Distances for ' + dist_name):
             mat[pida] = {}
             # We only care about distance to training, so will not use combined_df here
@@ -86,7 +111,9 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
 
     dist_quantiles = [.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .99]
     features = {}  # STUDENTID -> OrderedDict of features
-    for dist_name, mat in [('accessiondist', accession_dist), ('percentiledist', percentile_dist)]:
+    for dist_name, mat in [('accessiondist', accession_dist),
+                           # ('percentiledist', percentile_dist),
+                           ('timechunkdist', timechunk_dist)]:
         positive_pids = train[train.label == 1].STUDENTID.values
         negative_pids = train[train.label == 0].STUDENTID.values
         assert len(positive_pids) > 0 and len(negative_pids) > 0
@@ -130,8 +157,8 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     print('Grid search best kappa:', imp.best_score_)
     feat_names = [f for f in feat_names if importances[f] > .001]  # TODO: This cutoff is maybe too low here (only 20 features) since the feature importances add up to 1; probably worth revisiting in other files too
     print(len(feat_names), 'features after keeping only important features')
-    # misc_util.tree_error_analysis(train_X[feat_names], train_y, xval, ['negative', 'positive'],
-    #                               'graphs/seq_similarity_dt_' + datalen + '-')
+    misc_util.tree_error_analysis(train_X[feat_names], train_y, xval, ['negative', 'positive'],
+                                  'graphs/seq_similarity_dt_' + datalen + '-')
 
     print('Saving features')
     train_X[['STUDENTID'] + feat_names] \

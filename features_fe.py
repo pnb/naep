@@ -10,9 +10,6 @@
 #       SD of time spent across items
 #       Num times entered each item
 #   Count of items (AccessionNumber) seen/submitted -- always the same? TODO: Check in explore_data.py
-#   Similarity of ordering to positive-class students, via dOSS or similar
-#   Similarity of actions within each item
-#   Similarity of sequences with new action types engineered, like pauses, calculator use
 #       Rank of popularity of answers to questions
 #       Count of top-k ranked answers for different k
 #       Count of unanswered questions

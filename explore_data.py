@@ -3,6 +3,7 @@ from pprint import pprint
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 import load_data
 import misc_util
@@ -109,9 +110,22 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 #     Click Choice (Observable) happens with option selected in ExtendedInfo before colon
 # For MatchMS : -- note the space
 #     DropChoice (Observable) happens; the last time it has the student's answer in ExtendedInfo
-all_df = load_data.all_unique_rows()
-with pd.option_context('display.max_rows', None):
-    print(all_df.groupby(['ItemType', 'Observable']).size())
-answers = misc_util.final_answers_from_df(all_df)
-questions = misc_util.answer_counts(answers)
-pprint(questions)
+# all_df = load_data.all_unique_rows()
+# with pd.option_context('display.max_rows', None):
+#     print(all_df.groupby(['ItemType', 'Observable']).size())
+# answers = misc_util.final_answers_from_df(all_df)
+# questions = misc_util.answer_counts(answers)
+# pprint(questions)
+
+# How long are periods of activity/inactivity?
+print('\nAction duration descriptives (in seconds):')
+print((df.delta_time_ms / 1000).describe())  # Most are very very short, but there are so many
+chunk_action_counts = []
+for pid, pid_df in tqdm(df.groupby('STUDENTID')):
+    for chunk_start in range(pid_df.time_unix.min(), pid_df.time_unix.max(), 30000):
+        chunk_end = chunk_start + 30000
+        chunk_size = ((pid_df.time_unix >= chunk_start) & (pid_df.time_unix < chunk_end)).sum()
+        chunk_action_counts.append(chunk_size)
+chunk_action_counts = pd.Series(chunk_action_counts)
+print(chunk_action_counts.describe())
+print('Prop. with 0 actions:', (chunk_action_counts == 0).sum() / len(chunk_action_counts))  # 22%
