@@ -109,34 +109,47 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
                 if pidb not in mat[pida]:  # Symmetric, only calculate once
                     mat[pida][pidb] = mat[pidb][pida] = editdistance.eval(seqs[pida], seqs[pidb])
 
+    # Set up PIDs to use in "training" the features
+    print('Splitting data')
+    xval_X = train.STUDENTID.unique()
+    xval_y = [train[train.STUDENTID == p].label.iloc[0] for p in xval_X]
+    train_folds = [xval_X]  # Initially train on all training data, apply to all holdout
+    test_folds = [holdout.STUDENTID.unique()]
+    for train_i, test_i in xval.split(xval_X, xval_y):
+        train_folds.append(xval_X[train_i])
+        test_folds.append(xval_X[test_i])
+
     dist_quantiles = [.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .99]
     features = {}  # STUDENTID -> OrderedDict of features
-    for dist_name, mat in [('accessiondist', accession_dist),
-                           # ('percentiledist', percentile_dist),
-                           ('timechunkdist', timechunk_dist)]:
-        positive_pids = train[train.label == 1].STUDENTID.values
-        negative_pids = train[train.label == 0].STUDENTID.values
-        assert len(positive_pids) > 0 and len(negative_pids) > 0
-        for pid in tqdm(combined_df.STUDENTID.unique(), desc='Features for ' + dist_name):
-            # Include distance to self; otherwise tiny differences leak label info
-            dist_pos = np.array([mat[pid][p] for p in positive_pids])
-            dist_neg = np.array([mat[pid][p] for p in negative_pids])
-            if pid not in features:
-                features[pid] = OrderedDict({
-                    'STUDENTID': pid,
-                    'label': combined_df[combined_df.STUDENTID == pid].label.iloc[0],
+    for fold_i, (train_pids, test_pids) in enumerate(zip(train_folds, test_folds)):
+        print('Features for fold', fold_i + 1, 'of', len(train_folds))
+        for dist_name, mat in [('accessiondist', accession_dist),
+                               # ('percentiledist', percentile_dist),
+                               ('timechunkdist', timechunk_dist)]:
+            train_subset = train[train.STUDENTID.isin(train_pids)]
+            positive_pids = train_subset[train_subset.label == 1].STUDENTID.unique()
+            negative_pids = train_subset[train_subset.label == 0].STUDENTID.unique()
+            assert len(positive_pids) > 0 and len(negative_pids) > 0
+            for pid in tqdm(test_pids, desc='Features for ' + dist_name):
+                # Include distance to self; otherwise tiny differences leak label info
+                dist_pos = np.array([mat[pid][p] for p in positive_pids])
+                dist_neg = np.array([mat[pid][p] for p in negative_pids])
+                if pid not in features:
+                    features[pid] = OrderedDict({
+                        'STUDENTID': pid,
+                        'label': combined_df[combined_df.STUDENTID == pid].label.iloc[0],
+                    })
+                features[pid].update({
+                    dist_name + '_mean_pos': np.mean(dist_pos),
+                    dist_name + '_mean_neg': np.mean(dist_neg),
+                    dist_name + '_mean_diff': np.mean(dist_pos) - np.mean(dist_neg),
+                    dist_name + '_std_pos': np.std(dist_pos),
+                    dist_name + '_std_neg': np.std(dist_neg),
+                    **{dist_name + '_quantile_pos_' + str(q): val
+                       for q, val in zip(dist_quantiles, np.quantile(dist_pos, dist_quantiles))},
+                    **{dist_name + '_quantile_neg_' + str(q): val
+                       for q, val in zip(dist_quantiles, np.quantile(dist_neg, dist_quantiles))},
                 })
-            features[pid].update({
-                dist_name + '_mean_pos': np.mean(dist_pos),
-                dist_name + '_mean_neg': np.mean(dist_neg),
-                dist_name + '_mean_diff': np.mean(dist_pos) - np.mean(dist_neg),
-                dist_name + '_std_pos': np.std(dist_pos),
-                dist_name + '_std_neg': np.std(dist_neg),
-                **{dist_name + '_quantile_pos_' + str(q): val
-                   for q, val in zip(dist_quantiles, np.quantile(dist_pos, dist_quantiles))},
-                **{dist_name + '_quantile_neg_' + str(q): val
-                   for q, val in zip(dist_quantiles, np.quantile(dist_neg, dist_quantiles))},
-            })
     features = pd.DataFrame.from_records(list(features.values()))
     feat_names = [f for f in features if f != 'STUDENTID' and f != 'label']
 
@@ -157,8 +170,8 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     print('Grid search best kappa:', imp.best_score_)
     feat_names = [f for f in feat_names if importances[f] > .001]  # TODO: This cutoff is maybe too low here (only 20 features) since the feature importances add up to 1; probably worth revisiting in other files too
     print(len(feat_names), 'features after keeping only important features')
-    misc_util.tree_error_analysis(train_X[feat_names], train_y, xval, ['negative', 'positive'],
-                                  'graphs/seq_similarity_dt_' + datalen + '-')
+    # misc_util.tree_error_analysis(train_X[feat_names], train_y, xval, ['negative', 'positive'],
+    #                               'graphs/seq_similarity_dt_' + datalen + '-')
 
     print('Saving features')
     train_X[['STUDENTID'] + feat_names] \
