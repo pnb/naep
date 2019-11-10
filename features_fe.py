@@ -1,22 +1,18 @@
 # Ad-hoc feature engineering approach to extracting features
 
-# TODO: Finish implementing feature ideas
-# Feature ideas (doubly-indented are implemented):
-#       Time spent in each item (AccessionNumber)
-#       Time spent in each item >= 5th percentile as calculated from full data
-#       Count of VH items where time spent >= 5th percentile
-#       Num actions for each item
-#       Num of each type of action (Observable)
-#       SD of time spent across items
-#       Num times entered each item
-#   Count of items (AccessionNumber) seen/submitted -- always the same? TODO: Check in explore_data.py
-#       Rank of popularity of answers to questions
-#       Count of top-k ranked answers for different k
-#       Count of unanswered questions
-#   Time spent and num actions for each item type (might be too redundant)
-#   WTF behavior, especially at the end of the session (num Next event in last X mins vs. mean)
-#       Coefficients of polynomials fit to time spent per problem
-#       Coefficients of polynomials fit to overall timeseries
+# Feature ideas:
+#   Time spent in each item (AccessionNumber)
+#   Time spent in each item >= 5th percentile as calculated from full data
+#   Count of VH items where time spent >= 5th percentile
+#   Num actions for each item
+#   Num of each type of action (Observable)
+#   SD of time spent across items
+#   Num times entered each item
+#   Rank of popularity of answers to questions
+#   Count of top-k ranked answers for different k
+#   Count of unanswered questions
+#   Coefficients of polynomials fit to time spent per problem
+#   Coefficients of polynomials fit to overall timeseries
 from collections import OrderedDict
 
 import pandas as pd
