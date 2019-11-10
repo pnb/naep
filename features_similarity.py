@@ -81,8 +81,8 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
                     'Increase Zoom', 'Horizontal Item Scroll']
     for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making time chunk sequences'):
         seq_timechunks[pid] = []
-        for chunk_start in range(df.time_unix.min(), df.time_unix.max(), 30000):
-            chunk_end = chunk_start + 30000
+        for chunk_start in range(df.time_unix.min(), df.time_unix.max(), 10000):
+            chunk_end = chunk_start + 10000
             chunk = df[(df.time_unix >= chunk_start) & (df.time_unix < chunk_end)]
             if len(chunk) == 0:
                 seq_timechunks[pid].append(0)  # Nothing
