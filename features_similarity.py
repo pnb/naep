@@ -2,12 +2,13 @@
 #   Mean/functionals of edit distance to all training instances in positive/negative class
 # For different sequences:
 #   AccessionNumber (exercise ID); length ~= 1/minute of data (10, 20 30)
-#   Time spent on AccessionNumber in percentile bins (related to the 5% cutoff); length same
 #   Time chunk * some activity + navigation; length = datalen / chunk size
-#   TODO: Time chunk * AccessionNumber -- e.g., divide each AccessionNumber into 30s chunks with a leftover chunk and make sequences
+#   Time chunk * AccessionNumber; length = datalen / chunk size
 #   TODO: Similarity of sequences with new action types engineered, like pauses, calculator use
 #   TODO: Observable (action); length probably too long
 #   TODO: mean of [distance for Observable within each exercise] -- difficult to implement
+# Abandoned sequences (didn't work well):
+#   Time spent on AccessionNumber in percentile bins (related to the 5% cutoff); length same
 #
 # Levenshtein distance runs in O(N^2) so we must be careful with sequence length
 from collections import OrderedDict
@@ -40,13 +41,6 @@ gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 
 print('Loading data')
-all_rows = load_data.all_unique_rows()
-# Map item ID -> PID -> amount of time spent on item (for calculating percentiles/quantiles)
-item_time_distribution = all_rows.groupby(['AccessionNumber', 'STUDENTID']).delta_time_ms.sum()
-# Map item ID -> quantiles
-item_time_quantiles = {i: item_time_distribution[i].quantile([.025, .05, .1, .3, .5, .75, 1])
-                       for i in all_rows.AccessionNumber.unique()}
-
 for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout_10m()),
                                 ('20m', load_data.train_20m(), load_data.holdout_20m()),
                                 ('30m', load_data.train_full(), load_data.holdout_30m())]:
@@ -58,31 +52,21 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making item sequences'):
         seq_accession[pid] = [hash(i) for i in df.AccessionNumber.drop_duplicates()]
 
-    # Sequence of time spent per problem in terms of percentiles; somewhat addresses the target
-    # label definition of spending at least 5th percentile time on each item
-    seq_percentile = {}
-    for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making time spent sequences'):
-        starts = df[df.AccessionNumber.shift(1) != df.AccessionNumber].time_unix
-        stops = df[df.AccessionNumber.shift(-1) != df.AccessionNumber].time_unix
-        assert pd.isna(starts).sum() == 0 and pd.isna(stops).sum() == 0, 'Unexpected NaNs'
-        # Largest quantile that each time spent is less than
-        seq_percentile[pid] = \
-            [item_time_quantiles[i][stop - start < item_time_quantiles[i]].index[0]
-             for i, start, stop in zip(df.loc[starts.index, 'AccessionNumber'], starts, stops)]
-
     # Sequences of chunks of time spent editing, reading, nothing, or navigating
     seq_timechunks = {}
+    # Sequences of chunks of time per item (AccessionNumber)
+    seq_chunkitem = {}
     # TODO: Are "Next" and "Click Progress Navigator" mutually exlusive, and maybe redundant with Enter Item?
     # TODO: Leave Section appears redundant with Enter Item as well
-    # TODO: Back and Next might give more info about navigation direction though (but Back is rare)
     nav_actions = ['Enter Item', 'Next', 'Click Progress Navigator', 'Leave Section', 'Back']
     read_actions = ['Move Calculator', 'Vertical Item Scroll', 'TextToSpeech', 'Highlight',
                     'Change Theme', 'Yes', 'OK', 'Hide Timer', 'Show Timer', 'No', 'Decrease Zoom',
                     'Increase Zoom', 'Horizontal Item Scroll']
     for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making time chunk sequences'):
         seq_timechunks[pid] = []
-        for chunk_start in range(df.time_unix.min(), df.time_unix.max(), 10000):
-            chunk_end = chunk_start + 10000
+        seq_chunkitem[pid] = []
+        for chunk_start in range(df.time_unix.min(), df.time_unix.max(), 5000):
+            chunk_end = chunk_start + 5000
             chunk = df[(df.time_unix >= chunk_start) & (df.time_unix < chunk_end)]
             if len(chunk) == 0:
                 seq_timechunks[pid].append(0)  # Nothing
@@ -92,14 +76,18 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
                 seq_timechunks[pid].append(2)  # Reading
             else:
                 seq_timechunks[pid].append(3)  # Editing
+            if len(chunk) > 0:  # Chunk*AccessionNumber
+                seq_chunkitem[pid].append(hash(chunk.AccessionNumber.iloc[-1]))
+            else:  # No activity in chunk, so propagate the previous value
+                seq_chunkitem[pid].append(seq_timechunks[pid][-1])
 
     # Calculate distance matrices to avoid re-calculation during feature extraction
     accession_dist = {}  # A <-> B distance
-    percentile_dist = {}
     timechunk_dist = {}
+    chunkitem_dist = {}
     for dist_name, mat, seqs in [('accessiondist', accession_dist, seq_accession),
-                                 ('percentiledist', percentile_dist, seq_percentile),
-                                 ('timechunkdist', timechunk_dist, seq_timechunks)]:
+                                 ('timechunkdist', timechunk_dist, seq_timechunks),
+                                 ('chunkitemdist', chunkitem_dist, seq_chunkitem)]:
         for pida in tqdm(combined_df.STUDENTID.unique(), desc='Distances for ' + dist_name):
             mat[pida] = {}
             # We only care about distance to training, so will not use combined_df here
@@ -123,9 +111,9 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     features = {}  # STUDENTID -> OrderedDict of features
     for fold_i, (train_pids, test_pids) in enumerate(zip(train_folds, test_folds)):
         print('Features for fold', fold_i + 1, 'of', len(train_folds))
-        for dist_name, mat in [('accessiondist', accession_dist),
-                               # ('percentiledist', percentile_dist),
-                               ('timechunkdist', timechunk_dist)]:
+        for dist_name, mat in [#('accessiondist', accession_dist),
+                               #('timechunkdist', timechunk_dist),
+                               ('chunkitemdist', chunkitem_dist)]:
             train_subset = train[train.STUDENTID.isin(train_pids)]
             positive_pids = train_subset[train_subset.label == 1].STUDENTID.unique()
             negative_pids = train_subset[train_subset.label == 0].STUDENTID.unique()

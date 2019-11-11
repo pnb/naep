@@ -18,7 +18,7 @@ print('Loading labels from original data')
 label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
 
 # Set up model training parameters
-m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+m = ensemble.ExtraTreesClassifier(500, random_state=RANDOM_SEED)
 # m = xgboost.XGBClassifier(max_depth=3, learning_rate=.1, n_estimators=100, random_state=RANDOM_SEED, gamma=0, subsample=1, colsample_bytree=1, colsample_bylevel=1, colsample_bynode=1, reg_alpha=0, reg_lambda=1)
 grid = {
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
