@@ -45,7 +45,7 @@ for datalen in ['10m', '20m', '30m']:
     print('\nProcessing data length', datalen)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')
-    for fset in ['tsfresh', 'featuretools', 'similarity']:
+    for fset in ['tsfresh', 'featuretools']:
         tdf = pd.read_csv('features_' + fset + '/train_' + datalen + '.csv')
         hdf = pd.read_csv('features_' + fset + '/holdout_' + datalen + '.csv')
         feat_names = [f for f in tdf if f not in train_df.columns]

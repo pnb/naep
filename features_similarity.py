@@ -4,9 +4,6 @@
 #   AccessionNumber (exercise ID); length ~= 1/minute of data (10, 20 30)
 #   Time chunk * some activity + navigation; length = datalen / chunk size
 #   Time chunk * AccessionNumber; length = datalen / chunk size
-#   TODO: Similarity of sequences with new action types engineered, like pauses, calculator use
-#   TODO: Observable (action); length probably too long
-#   TODO: mean of [distance for Observable within each exercise] -- difficult to implement
 # Abandoned sequences (didn't work well):
 #   Time spent on AccessionNumber in percentile bins (related to the 5% cutoff); length same
 #
