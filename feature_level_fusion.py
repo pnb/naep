@@ -18,9 +18,11 @@ print('Loading labels from original data')
 label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
 
 # Set up model training parameters
-m = ensemble.ExtraTreesClassifier(500, random_state=RANDOM_SEED)
+m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
 # m = xgboost.XGBClassifier(max_depth=3, learning_rate=.1, n_estimators=100, random_state=RANDOM_SEED, gamma=0, subsample=1, colsample_bytree=1, colsample_bylevel=1, colsample_bynode=1, reg_alpha=0, reg_lambda=1)
 grid = {
+    'uncorrelated_fs__max_rho': [.6, .7, .8],
+
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
     'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
 
@@ -30,6 +32,7 @@ grid = {
 }
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 pipe = pipeline.Pipeline([
+    ('uncorrelated_fs', misc_util.UncorrelatedFeatureSelector(verbose=2)),
     ('model', m),
 ], memory=CACHE_DIR)
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
@@ -54,10 +57,10 @@ for datalen in ['10m', '20m', '30m']:
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
     # TODO: Might be able to tune max_rho to get a higher AUC vs. higher kappa for later fusion
-    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
-                                                remove_perfect_corr=True, verbose=1)
-    features = fsets[0]
-    print(len(features), 'features after removing highly correlated features')
+    # fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
+    #                                             remove_perfect_corr=True, verbose=2)
+    # features = fsets[0]
+    # print(len(features), 'features after removing highly correlated features')
     train_y = [label_map[p] for p in train_df.STUDENTID]
 
     # First cross-validate on training data to test accuracy on local (non-LB) data
