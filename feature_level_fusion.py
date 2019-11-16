@@ -21,10 +21,11 @@ label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterr
 m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
 # m = xgboost.XGBClassifier(max_depth=3, learning_rate=.1, n_estimators=100, random_state=RANDOM_SEED, gamma=0, subsample=1, colsample_bytree=1, colsample_bylevel=1, colsample_bynode=1, reg_alpha=0, reg_lambda=1)
 grid = {
-    'uncorrelated_fs__max_rho': [.6, .7, .8],
+    'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
 
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
+    'model__max_features': [.1, .15, .2, .25, .3, .35, .4, .45, .5, .55, .6, .65, .7, .75, .8, .85,
+                            .9, .95, 1.0, 'auto'],
 
     # 'model__max_depth': [1, 2, 3, 4],  # XGBoost
     # 'model__learning_rate': [.05, .1, .2, .3],
@@ -35,8 +36,11 @@ pipe = pipeline.Pipeline([
     ('uncorrelated_fs', misc_util.UncorrelatedFeatureSelector(verbose=2)),
     ('model', m),
 ], memory=CACHE_DIR)
-gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
-                                  scoring=metrics.make_scorer(metrics.cohen_kappa_score))
+gs = model_selection.RandomizedSearchCV(pipe, grid, n_iter=100, cv=xval, verbose=1,
+                                        random_state=RANDOM_SEED,
+                                        scoring=metrics.make_scorer(metrics.cohen_kappa_score))
+# gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
+#                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
