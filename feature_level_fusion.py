@@ -19,28 +19,37 @@ label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterr
 
 # Set up model training parameters
 m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
-# m = xgboost.XGBClassifier(max_depth=3, learning_rate=.1, n_estimators=100, random_state=RANDOM_SEED, gamma=0, subsample=1, colsample_bytree=1, colsample_bylevel=1, colsample_bynode=1, reg_alpha=0, reg_lambda=1)
+# m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
 grid = {
-    'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
+    # 'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
 
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .15, .2, .25, .3, .35, .4, .45, .5, .55, .6, .65, .7, .75, .8, .85,
-                            .9, .95, 1.0, 'auto'],
+    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
+    # 'model__max_features': [.1, .15, .2, .25, .3, .35, .4, .45, .5, .55, .6, .65, .7, .75, .8, .85,
+    #                         .9, .95, 1.0, 'auto'],
 
-    # 'model__max_depth': [1, 2, 3, 4],  # XGBoost
-    # 'model__learning_rate': [.05, .1, .2, .3],
-    # 'model__n_estimators': [25, 50, 100, 200],
+    # 'model__max_depth': [1, 2, 3, 4, 5, 6, 7, 8],  # XGBoost
+    # 'model__learning_rate': [.001, .01, .1, .2, .3, .4, .5],
+    # 'model__n_estimators': [5, 10, 15, 20, 30, 40, 50, 100, 200],
+    # 'model__gamma': [0, .01, .05, .1, .2, .3, .4, .5, .75, 1, 2, 4, 8],
+    # 'model__subsample': [.5, .6, .7, .8, .9, 1],
+    # 'model__colsample_bynode': [.1, .2, .3, .4, .5, .6, .7, .8, .9, 1],
+    # 'model__reg_alpha': [0, .1, .2, .4, .8, 2, 4, 8],
+    # 'model__reg_lambda': [.1, .2, .4, .8, 2, 4, 8],
+    # 'model__num_parallel_tree': [1, 3],  # Small forest of GB trees
 }
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 pipe = pipeline.Pipeline([
-    ('uncorrelated_fs', misc_util.UncorrelatedFeatureSelector(verbose=2)),
+    # ('uncorrelated_fs', misc_util.UncorrelatedFeatureSelector(verbose=2)),
     ('model', m),
 ], memory=CACHE_DIR)
-gs = model_selection.RandomizedSearchCV(pipe, grid, n_iter=100, cv=xval, verbose=1,
-                                        random_state=RANDOM_SEED,
-                                        scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-# gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
-#                                   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
+# gs = model_selection.RandomizedSearchCV(pipe, grid, n_iter=100, cv=xval, verbose=1, n_jobs=3,
+#                                         random_state=RANDOM_SEED,
+#                                         scoring=metrics.make_scorer(metrics.cohen_kappa_score))
+gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1, n_jobs=3,
+                                  scoring=metrics.make_scorer(metrics.roc_auc_score, needs_proba=True))
+                                #   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
+                                #   scoring=metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True))
 scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
            'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
            'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
@@ -61,10 +70,10 @@ for datalen in ['10m', '20m', '30m']:
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
     # TODO: Might be able to tune max_rho to get a higher AUC vs. higher kappa for later fusion
-    # fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
-    #                                             remove_perfect_corr=True, verbose=2)
-    # features = fsets[0]
-    # print(len(features), 'features after removing highly correlated features')
+    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
+                                                remove_perfect_corr=True, verbose=2)
+    features = fsets[0]
+    print(len(features), 'features after removing highly correlated features')
     train_y = [label_map[p] for p in train_df.STUDENTID]
 
     # First cross-validate on training data to test accuracy on local (non-LB) data
@@ -81,6 +90,7 @@ for datalen in ['10m', '20m', '30m']:
     # Fit on all training data and apply to holdout data
     print('\nFitting holdout model for', datalen, 'data')
     probs = gs.fit(train_df[features], train_y).predict_proba(holdout_df[features]).T[1]
+    pd.DataFrame(gs.cv_results_).to_csv('fusion_cv_results_' + datalen + '.csv', index=False)
     print('Grid search best estimator:', gs.best_estimator_)
     print('Grid search scorer:', gs.scorer_)
     print('Grid search best score:', gs.best_score_)
