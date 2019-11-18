@@ -258,7 +258,56 @@ def per_feature_analysis(X, y, cv):
     return pd.DataFrame.from_records(result)
 
 
+def adjusted_thresh_kappa(y_true, y_pred, thresholds=100):
+    """Cohen's kappa with the decision threshold adjusted to maximiize kappa. `thresholds` evenly-
+    spaced cutoffs in [0, 1] will be evaluated.
+
+    Args:
+        y_true (Numpy array): Ground truth labels (0 or 1)
+        y_pred (Numpy array): Predicted probabilities (must be continuous, probability-like)
+        thresholds (int, optional): Number of thresholds to explore. Defaults to 100.
+
+    Returns:
+        float: Adjusted-threshold kappa
+    """
+    y_pred = np.array(y_pred)
+    assert len(np.unique(y_pred)) > 2, 'Threshold finding requires probability-like predictions'
+    return max(metrics.cohen_kappa_score(y_true, y_pred > t)
+               for t in np.linspace(0, 1, thresholds + 1))
+
+
+def thresh_restricted_auk(y_true, y_pred, thresholds=100, auk_width=.1):
+    """Area under the Cohen's kappa curve (AUK) restricted to a range centered around the ideal
+    (maximum kappa) threshold. For example, if the ideal threshold for maximizing kappa is 0.64 and
+    `auk_width` is set to 0.1, then the returned value will be AUK measured from 0.59 to 0.69 (i.e.,
+    0.65 +/- 0.1).
+
+    Args:
+        y_true (Numpy array): Ground truth labels (0 or 1)
+        y_pred (Numpy array): Predicted probabilities (must be continuous, probability-like)
+        thresholds (int, optional): Number of thresholds to explore. Defaults to 100.
+        auk_width (float, optional): Width of interval around ideal threshold for restricted-range
+            AUK calculation. Defaults to 0.1.
+
+    Returns:
+        float: Restricted-range AUK (value normalized to [-1, 1] based on `auk_width`)
+    """
+    y_pred = np.array(y_pred)
+    assert len(np.unique(y_pred)) > 2, 'Threshold finding requires probability-like predictions'
+    cuts = np.linspace(0, 1, thresholds + 1)
+    kappas = np.array([metrics.cohen_kappa_score(y_true, y_pred > t) for t in cuts])
+    ideal = cuts[np.argmax(kappas)]
+    restricted_kappas = kappas[(cuts >= ideal - auk_width / 2) & (cuts <= ideal + auk_width / 2)]
+    return sum(restricted_kappas) / len(restricted_kappas)
+
+
 if __name__ == '__main__':
     df = pd.DataFrame({'w': [2, 2, 3, 4, 5], 'x': [1, -2, 1, 3, 3], 'y': [5, 1, 3, 0, 1],
                        'z': [1.1, -1, 1, 5, 5], 'w2': [2, 2, 3, 4, 5]})
     print(uncorrelated_feature_sets(df, max_rho=.5, verbose=2, remove_perfect_corr=True))
+
+    truth = [0, 1, 1, 1, 0, 0, 1, 1]
+    preds = [.1, .5, .4, .6, .2, .3, .2, .9]
+    print('Kappa:', metrics.cohen_kappa_score(truth, np.array(preds) >= .5))
+    print('Threshold-adjusted kappa:', adjusted_thresh_kappa(truth, preds))
+    print('Threshold-restricted AUK:', thresh_restricted_auk(truth, preds))

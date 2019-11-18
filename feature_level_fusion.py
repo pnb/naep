@@ -47,7 +47,8 @@ pipe = pipeline.Pipeline([
 #                                         random_state=RANDOM_SEED,
 #                                         scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1, n_jobs=3,
-                                  scoring=metrics.make_scorer(metrics.roc_auc_score, needs_proba=True))
+                                  scoring=metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True))
+                                #   scoring=metrics.make_scorer(metrics.roc_auc_score, needs_proba=True))
                                 #   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
                                 #   scoring=metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True))
 scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
