@@ -1,10 +1,12 @@
 # Load/combine extracted feature sets, remove highly correlated features, and build models
 from collections import OrderedDict
+import warnings
 
 import pandas as pd
 import numpy as np
 from sklearn import ensemble, pipeline, model_selection, metrics
 import xgboost
+from skopt import BayesSearchCV, space
 
 import load_data
 import misc_util
@@ -12,6 +14,8 @@ import misc_util
 
 RANDOM_SEED = 11798
 CACHE_DIR = '/Users/pnb/sklearn_cache'
+# A very repetitive BayesSearchCV warning I'd like to ignore
+warnings.filterwarnings('ignore', message='The objective has been evaluated at this point before.')
 
 
 print('Loading labels from original data')
@@ -20,6 +24,11 @@ label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterr
 # Set up model training parameters
 m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
 # m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
+bayes_grid = {
+    'model__min_samples_leaf': space.Integer(1, 50),
+    'model__max_features': space.Real(.001, 1),
+    'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
+}
 grid = {
     # 'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
 
@@ -43,17 +52,17 @@ pipe = pipeline.Pipeline([
     # ('uncorrelated_fs', misc_util.UncorrelatedFeatureSelector(verbose=2)),
     ('model', m),
 ], memory=CACHE_DIR)
+scoring = metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True)
+# scoring = metrics.make_scorer(metrics.cohen_kappa_score)
+# scoring = metrics.make_scorer(metrics.roc_auc_score, needs_proba=True)
+# scoring = metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True)
 # gs = model_selection.RandomizedSearchCV(pipe, grid, n_iter=100, cv=xval, verbose=1, n_jobs=3,
-#                                         random_state=RANDOM_SEED,
-#                                         scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1, n_jobs=3,
-                                  scoring=metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True))
-                                #   scoring=metrics.make_scorer(metrics.roc_auc_score, needs_proba=True))
-                                #   scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-                                #   scoring=metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True))
-scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
-           'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
-           'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
+#                                         random_state=RANDOM_SEED, scoring=scoring)
+# gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1, n_jobs=3, scoring=scoring)
+# Getting BayesSearchCV to work requires modifying site-packages/skopt/searchcv.py per:
+#   https://github.com/scikit-optimize/scikit-optimize/issues/762
+gs = BayesSearchCV(pipe, bayes_grid, n_iter=100, n_jobs=3, cv=xval, verbose=0, scoring=scoring,
+                   random_state=RANDOM_SEED, optimizer_kwargs={'n_initial_points': 20})
 
 # Build models
 hidden_result = pd.read_csv('public_data/hidden_label.csv')
@@ -92,9 +101,9 @@ for datalen in ['10m', '20m', '30m']:
     print('\nFitting holdout model for', datalen, 'data')
     probs = gs.fit(train_df[features], train_y).predict_proba(holdout_df[features]).T[1]
     pd.DataFrame(gs.cv_results_).to_csv('fusion_cv_results_' + datalen + '.csv', index=False)
-    print('Grid search best estimator:', gs.best_estimator_)
-    print('Grid search scorer:', gs.scorer_)
-    print('Grid search best score:', gs.best_score_)
+    print('Hyperparameter search best estimator:', gs.best_estimator_)
+    print('Hyperparameter search scorer:', gs.scorer_)
+    print('Hyperparameter search best score:', gs.best_score_)
     print('Train data positive class base rate:', np.mean(train_y))
     print('Predicted base rate (> .5 threshold):', np.mean(probs > .5))
     for pid, pred in zip(holdout_df.STUDENTID.values, probs):
