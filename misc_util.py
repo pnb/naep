@@ -271,7 +271,6 @@ def adjusted_thresh_kappa(y_true, y_pred, thresholds=100):
         float: Adjusted-threshold kappa
     """
     y_pred = np.array(y_pred)
-    assert len(np.unique(y_pred)) > 2, 'Threshold finding requires probability-like predictions'
     return max(metrics.cohen_kappa_score(y_true, y_pred > t)
                for t in np.linspace(0, 1, thresholds + 1))
 
@@ -293,7 +292,6 @@ def thresh_restricted_auk(y_true, y_pred, thresholds=100, auk_width=.1):
         float: Restricted-range AUK (value normalized to [-1, 1] based on `auk_width`)
     """
     y_pred = np.array(y_pred)
-    assert len(np.unique(y_pred)) > 2, 'Threshold finding requires probability-like predictions'
     cuts = np.linspace(0, 1, thresholds + 1)
     kappas = np.array([metrics.cohen_kappa_score(y_true, y_pred > t) for t in cuts])
     ideal = cuts[np.argmax(kappas)]

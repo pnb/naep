@@ -22,30 +22,28 @@ print('Loading labels from original data')
 label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
 
 # Set up model training parameters
-m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
-# m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
+# m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
 bayes_grid = {
-    'model__min_samples_leaf': space.Integer(1, 50),
-    'model__max_features': space.Real(.001, 1),
-    'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
+    # 'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees
+    # 'model__max_features': space.Real(.001, 1),
+    # 'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
+
+    'model__max_depth': space.Integer(1, 12),  # XGBoost
+    'model__learning_rate': space.Real(.0001, .5),
+    'model__n_estimators': space.Integer(5, 200),
+    'model__gamma': space.Real(0, 8),
+    'model__subsample': space.Real(.1, 1),
+    'model__colsample_bynode': space.Real(.1, 1),
+    'model__reg_alpha': space.Real(0, 8),
+    'model__reg_lambda': space.Real(0, 8),
+    # 'model__num_parallel_tree': [1, 3],  # Small forest of GB trees
 }
 grid = {
     # 'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
 
     'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
     'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
-    # 'model__max_features': [.1, .15, .2, .25, .3, .35, .4, .45, .5, .55, .6, .65, .7, .75, .8, .85,
-    #                         .9, .95, 1.0, 'auto'],
-
-    # 'model__max_depth': [1, 2, 3, 4, 5, 6, 7, 8],  # XGBoost
-    # 'model__learning_rate': [.001, .01, .1, .2, .3, .4, .5],
-    # 'model__n_estimators': [5, 10, 15, 20, 30, 40, 50, 100, 200],
-    # 'model__gamma': [0, .01, .05, .1, .2, .3, .4, .5, .75, 1, 2, 4, 8],
-    # 'model__subsample': [.5, .6, .7, .8, .9, 1],
-    # 'model__colsample_bynode': [.1, .2, .3, .4, .5, .6, .7, .8, .9, 1],
-    # 'model__reg_alpha': [0, .1, .2, .4, .8, 2, 4, 8],
-    # 'model__reg_lambda': [.1, .2, .4, .8, 2, 4, 8],
-    # 'model__num_parallel_tree': [1, 3],  # Small forest of GB trees
 }
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 pipe = pipeline.Pipeline([
