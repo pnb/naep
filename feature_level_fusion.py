@@ -22,22 +22,24 @@ print('Loading labels from original data')
 label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
 
 # Set up model training parameters
-# m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
-m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
+m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+# m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
 bayes_grid = {
-    # 'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees
-    # 'model__max_features': space.Real(.001, 1),
-    # 'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
+    'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees
+    'model__max_features': space.Real(.001, 1),
+    'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
+    'model__criterion': ['gini', 'entropy'],
+    'model__bootstrap': [True, False],
+    # 'model__oob_score': [True, False],
 
-    'model__max_depth': space.Integer(1, 12),  # XGBoost
-    'model__learning_rate': space.Real(.0001, .5),
-    'model__n_estimators': space.Integer(5, 200),
-    'model__gamma': space.Real(0, 8),
-    'model__subsample': space.Real(.1, 1),
-    'model__colsample_bynode': space.Real(.1, 1),
-    'model__reg_alpha': space.Real(0, 8),
-    'model__reg_lambda': space.Real(0, 8),
-    # 'model__num_parallel_tree': [1, 3],  # Small forest of GB trees
+    # 'model__max_depth': space.Integer(1, 12),  # XGBoost
+    # 'model__learning_rate': space.Real(.0001, .5),
+    # 'model__n_estimators': space.Integer(5, 200),
+    # 'model__gamma': space.Real(0, 8),
+    # 'model__subsample': space.Real(.1, 1),
+    # 'model__colsample_bynode': space.Real(.1, 1),
+    # 'model__reg_alpha': space.Real(0, 8),
+    # 'model__reg_lambda': space.Real(0, 8),
 }
 grid = {
     # 'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
@@ -54,8 +56,6 @@ scoring = metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True)
 # scoring = metrics.make_scorer(metrics.cohen_kappa_score)
 # scoring = metrics.make_scorer(metrics.roc_auc_score, needs_proba=True)
 # scoring = metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True)
-# gs = model_selection.RandomizedSearchCV(pipe, grid, n_iter=100, cv=xval, verbose=1, n_jobs=3,
-#                                         random_state=RANDOM_SEED, scoring=scoring)
 # gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1, n_jobs=3, scoring=scoring)
 # Getting BayesSearchCV to work requires modifying site-packages/skopt/searchcv.py per:
 #   https://github.com/scikit-optimize/scikit-optimize/issues/762
@@ -69,7 +69,7 @@ for datalen in ['10m', '20m', '30m']:
     print('\nProcessing data length', datalen)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')
-    for fset in ['tsfresh', 'featuretools']:
+    for fset in ['tsfresh', 'featuretools', 'similarity']:
         tdf = pd.read_csv('features_' + fset + '/train_' + datalen + '.csv')
         hdf = pd.read_csv('features_' + fset + '/holdout_' + datalen + '.csv')
         feat_names = [f for f in tdf if f not in train_df.columns]

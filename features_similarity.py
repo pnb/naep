@@ -108,7 +108,7 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     features = {}  # STUDENTID -> OrderedDict of features
     for fold_i, (train_pids, test_pids) in enumerate(zip(train_folds, test_folds)):
         print('Features for fold', fold_i + 1, 'of', len(train_folds))
-        for dist_name, mat in [#('accessiondist', accession_dist),
+        for dist_name, mat in [('accessiondist', accession_dist),
                                #('timechunkdist', timechunk_dist),
                                ('chunkitemdist', chunkitem_dist)]:
             train_subset = train[train.STUDENTID.isin(train_pids)]
