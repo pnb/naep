@@ -118,14 +118,20 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 # pprint(questions)
 
 # How long are periods of activity/inactivity?
-print('\nAction duration descriptives (in seconds):')
-print((df.delta_time_ms / 1000).describe())  # Most are very very short, but there are so many
-chunk_action_counts = []
-for pid, pid_df in tqdm(df.groupby('STUDENTID')):
-    for chunk_start in range(pid_df.time_unix.min(), pid_df.time_unix.max(), 30000):
-        chunk_end = chunk_start + 30000
-        chunk_size = ((pid_df.time_unix >= chunk_start) & (pid_df.time_unix < chunk_end)).sum()
-        chunk_action_counts.append(chunk_size)
-chunk_action_counts = pd.Series(chunk_action_counts)
-print(chunk_action_counts.describe())
-print('Prop. with 0 actions:', (chunk_action_counts == 0).sum() / len(chunk_action_counts))  # 22%
+# print('\nAction duration descriptives (in seconds):')
+# print((df.delta_time_ms / 1000).describe())  # Most are very very short, but there are so many
+# chunk_action_counts = []
+# for pid, pid_df in tqdm(df.groupby('STUDENTID')):
+#     for chunk_start in range(pid_df.time_unix.min(), pid_df.time_unix.max(), 30000):
+#         chunk_end = chunk_start + 30000
+#         chunk_size = ((pid_df.time_unix >= chunk_start) & (pid_df.time_unix < chunk_end)).sum()
+#         chunk_action_counts.append(chunk_size)
+# chunk_action_counts = pd.Series(chunk_action_counts)
+# print(chunk_action_counts.describe())
+# print('Prop. with 0 actions:', (chunk_action_counts == 0).sum() / len(chunk_action_counts))  # 22%
+
+# Does erasing relate to outcome?
+df['backspace'] = df.ExtendedInfo.str.contains('Backspace')
+# df.Observable == 'Math Keypress'
+print(df.backspace.value_counts())
+print(df.groupby(['STUDENTID', 'label']).backspace.sum())

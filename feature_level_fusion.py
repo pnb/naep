@@ -30,7 +30,6 @@ bayes_grid = {
     'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
     'model__criterion': ['gini', 'entropy'],
     'model__bootstrap': [True, False],
-    # 'model__oob_score': [True, False],
 
     # 'model__max_depth': space.Integer(1, 12),  # XGBoost
     # 'model__learning_rate': space.Real(.0001, .5),
@@ -69,7 +68,7 @@ for datalen in ['10m', '20m', '30m']:
     print('\nProcessing data length', datalen)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')
-    for fset in ['tsfresh', 'featuretools', 'similarity']:
+    for fset in ['tsfresh', 'featuretools']:  # , 'similarity']:
         tdf = pd.read_csv('features_' + fset + '/train_' + datalen + '.csv')
         hdf = pd.read_csv('features_' + fset + '/holdout_' + datalen + '.csv')
         feat_names = [f for f in tdf if f not in train_df.columns]
@@ -77,6 +76,11 @@ for datalen in ['10m', '20m', '30m']:
         holdout_df[feat_names] = hdf[feat_names]
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
+    # Remove features that predict holdout vs. train very well
+    acc_holdout = pd.read_csv('features_fe/is_holdout_accuracy-' + datalen + '.csv')
+    high_diff_feats = acc_holdout[acc_holdout.mean_test_kappa > .1].feature.values
+    features = [f for f in features if f not in high_diff_feats]
+    print(len(features), 'features after removing those with differing train/holdout distributions')
     # TODO: Might be able to tune max_rho to get a higher AUC vs. higher kappa for later fusion
     fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
                                                 remove_perfect_corr=True, verbose=2)

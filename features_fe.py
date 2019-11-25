@@ -14,6 +14,7 @@
 #   Coefficients of polynomials fit to time spent per problem
 #   Coefficients of polynomials fit to overall timeseries
 from collections import OrderedDict
+import warnings
 
 import pandas as pd
 import numpy as np
@@ -26,6 +27,7 @@ import misc_util
 
 RANDOM_SEED = 11798
 CACHE_DIR = '/Users/pnb/sklearn_cache'
+warnings.filterwarnings('ignore', message='Polyfit may be poorly conditioned')
 
 
 def extract_features(pandas_df, freq_actions, item_5percentile_map, question_answer_counts):
@@ -47,11 +49,16 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map, question_ans
             **{'count_' + e: len(v) for e, v in pid_df.groupby('Observable') if e in freq_actions},
             **{'percentile5_' + e: int(v.delta_time_ms.sum() >= item_5percentile_map[e])
                for e, v in pid_df.groupby('AccessionNumber')},
+            **{'backspaces_' + e: v.ExtendedInfo.str.contains('Backspace').sum()
+               for e, v in pid_df.groupby('AccessionNumber')},
         }))
         rows[-1]['percentile5_vh_count'] = \
             sum(v for k, v in rows[-1].items() if k.startswith('percentile5_'))
         rows[-1]['sec_spent_std'] = \
             np.std([v for k, v in rows[-1].items() if k.startswith('sec_spent_')])
+        rows[-1]['backspaces_total'] = pid_df.ExtendedInfo.str.contains('Backspace').sum()
+        for col in set(rows[-1]) - set(['label']):
+            assert not np.isnan(rows[-1][col])
         # Coefficients of polynomials fitted to series of continuous values
         for ts_name, ts in [('delta_sec', pid_df.delta_time_ms.values / 1000),
                             ('per_item_sec', [(v.time_unix.max() - v.time_unix.min()) / 1000
