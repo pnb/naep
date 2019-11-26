@@ -30,13 +30,14 @@ CACHE_DIR = '/Users/pnb/sklearn_cache'
 warnings.filterwarnings('ignore', message='Polyfit may be poorly conditioned')
 
 
-def extract_features(pandas_df, freq_actions, item_5percentile_map, question_answer_counts):
-    # freq_actions is a list of common actions that should be dummy-coded
+def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
     # item_5percentile_map is a mapping of item_name -> 5th percentile of time spent (ms) for item
     # question_answer_counts is a mapping of question ID -> Counter of answers
     # Returns (X, y, list of feature names); y may be None if `label` is not in `pandas_df`
     rows = []
     answer_ranks = {q: misc_util.answer_ranks(c) for q, c in question_answer_counts.items()}
+    actual_items = set([row.AccessionNumber for _, row in pandas_df.iterrows() if row.ItemType in
+                       ['FillInBlank', 'MCSS', 'MatchMS', 'MultipleFillInBlank']])
     for pid, pid_df in tqdm(pandas_df.groupby('STUDENTID'), desc='Extracting features'):
         rows.append(OrderedDict({
             'STUDENTID': pid,
@@ -46,17 +47,32 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map, question_ans
             **{'times_entered_' + e: sum(v.Observable == 'Enter Item')
                for e, v in pid_df.groupby('AccessionNumber')},
             **{'num_actions_' + e: len(v) for e, v in pid_df.groupby('AccessionNumber')},
-            **{'count_' + e: len(v) for e, v in pid_df.groupby('Observable') if e in freq_actions},
+            **{'count_' + o: len(v) for o, v in pid_df.groupby('Observable')},
             **{'percentile5_' + e: int(v.delta_time_ms.sum() >= item_5percentile_map[e])
                for e, v in pid_df.groupby('AccessionNumber')},
             **{'backspaces_' + e: v.ExtendedInfo.str.contains('Backspace').sum()
                for e, v in pid_df.groupby('AccessionNumber')},
+            **{'readtime_' + e: v[v.Observable == 'Enter Item'].iloc[0].delta_time_ms
+               for e, v in pid_df.groupby('AccessionNumber')
+               if 'Enter Item' in v.Observable.values},
+            **{'repeat_extended_' + o: len(v) - len(v.ExtendedInfo.unique())
+               for o, v in pid_df.groupby('Observable')},
         }))
         rows[-1]['percentile5_vh_count'] = \
             sum(v for k, v in rows[-1].items() if k.startswith('percentile5_'))
         rows[-1]['sec_spent_std'] = \
             np.std([v for k, v in rows[-1].items() if k.startswith('sec_spent_')])
+        actual_sec = [v for k, v in rows[-1].items() if k.startswith('sec_spent_') and
+                      k[10:] in actual_items]
+        if len(actual_sec) > 0:
+            rows[-1]['sec_spent_actual_min'] = min(actual_sec)
+        if len(actual_sec) > 1:
+            rows[-1]['sec_spent_actual_2nd_smallest'] = \
+                min(v for v in actual_sec if v != rows[-1]['sec_spent_actual_min'])
         rows[-1]['backspaces_total'] = pid_df.ExtendedInfo.str.contains('Backspace').sum()
+        rows[-1]['readtime_total'] = \
+            sum(v for k, v in rows[-1].items() if k.startswith('readtime_'))
+        rows[-1]['sec_spent_total'] = (pid_df.time_unix.max() - pid_df.time_unix.min()) / 1000
         for col in set(rows[-1]) - set(['label']):
             assert not np.isnan(rows[-1][col])
         # Coefficients of polynomials fitted to series of continuous values
@@ -91,8 +107,6 @@ def extract_features(pandas_df, freq_actions, item_5percentile_map, question_ans
 
 print('Loading data')
 df = load_data.all_unique_rows()
-freq_actions = df.Observable.value_counts()
-freq_actions = freq_actions[freq_actions >= 2464].index  # Average at least once per student
 item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.05)
                         for i, v in df.groupby('AccessionNumber')}
 student_answers = misc_util.final_answers_from_df(df, verbose=1)
@@ -124,8 +138,7 @@ feat_dfs = {}
 feat_ys = {}
 for dsname in dfs:
     print('\nFeatures for', dsname)
-    tx, ty, feat_names = extract_features(dfs[dsname], freq_actions, item_5percentile_map,
-                                          question_answer_counts)
+    tx, ty, feat_names = extract_features(dfs[dsname], item_5percentile_map, question_answer_counts)
     feat_ys[dsname] = ty
     if dsname.endswith('30m'):  # Extract additional features from last 5 minutes
         print('Features from the last five minutes of data')
@@ -134,8 +147,7 @@ for dsname in dfs:
         last5_start = pd.Series([ms_end[pid] - 5 * 60 * 1000 for pid in last5.STUDENTID],
                                 index=last5.index)
         last5 = last5[last5.time_unix > last5_start]
-        last5x, _, _ = extract_features(last5, freq_actions, item_5percentile_map,
-                                        question_answer_counts)
+        last5x, _, _ = extract_features(last5, item_5percentile_map, question_answer_counts)
         for f in feat_names:
             if f in last5x:
                 tx[f + '_last5'] = last5x[f]

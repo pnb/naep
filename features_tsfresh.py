@@ -3,6 +3,8 @@
 # Possible timeseries:
 #   Time delta between actions (i.e., action duration)  TODO: Try collapse actions within 100ms of each other
 #   Item duration
+#   Item duration only for actual problems (excluding directions/help and such)
+#   TODO: Item duration for last five minutes (or if too short, action duration)
 import logging
 
 from sklearn import ensemble, model_selection, pipeline, metrics
@@ -23,12 +25,17 @@ def format_timeseries(pandas_df):
     # Map of stacked timeseries dataframes of different lengths, as expected by TSFresh
     # Returns X, y, ts_dfs
     print('Formatting timeseries data')
-    ts_dfs = {'delta_sec': [], 'per_item_sec': []}
+    actual_items = set([row.AccessionNumber for _, row in pandas_df.iterrows() if row.ItemType in
+                       ['FillInBlank', 'MCSS', 'MatchMS', 'MultipleFillInBlank']])
+    ts_dfs = {'delta_sec': [], 'per_item_sec': [], 'per_problem_sec': []}
     for pid, pid_df in tqdm(pandas_df.groupby('STUDENTID')):  # groupby sorts by STUDENTID
         ts_dfs['delta_sec'].append(pd.DataFrame({'ts': pid_df.delta_time_ms.values / 1000}))
         ts_dfs['per_item_sec'].append(pd.DataFrame(
             {'ts': [(v.time_unix.max() - v.time_unix.min()) / 1000
              for _, v in pid_df.groupby('AccessionNumber')]}))
+        ts_dfs['per_problem_sec'].append(pd.DataFrame(
+            {'ts': [v.delta_time_ms.sum() / 1000 for i, v in pid_df.groupby('AccessionNumber')
+             if i in actual_items]}))
         for key in ts_dfs:
             ts_dfs[key][-1]['instance_index'] = pid
     for key in ts_dfs:

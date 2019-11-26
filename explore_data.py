@@ -16,7 +16,7 @@ df = load_data.train_full()
 
 print(len(df), 'rows')
 print(len(df.STUDENTID.unique()), 'unique students')
-print(df.label.mean(), 'positive class base rate')
+print(df.groupby('STUDENTID').label.mean().mean(), 'positive class base rate')
 print(df.columns)
 print(df.groupby(['ItemType', 'AccessionNumber']).size())
 print('\nNumber of rows per student ID:')
@@ -130,8 +130,40 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 # print(chunk_action_counts.describe())
 # print('Prop. with 0 actions:', (chunk_action_counts == 0).sum() / len(chunk_action_counts))  # 22%
 
-# Does erasing relate to outcome?
-df['backspace'] = df.ExtendedInfo.str.contains('Backspace')
-# df.Observable == 'Math Keypress'
-print(df.backspace.value_counts())
-print(df.groupby(['STUDENTID', 'label']).backspace.sum())
+# Does erasing relate to outcome? Not that much.
+# df['backspace'] = df.ExtendedInfo.str.contains('Backspace')
+# # df.Observable == 'Math Keypress'
+# print(df.backspace.value_counts())
+# print(df.groupby(['STUDENTID', 'label']).backspace.sum())
+
+# Do total times differ much across students or do they all use the full 30 minutes? They differ.
+# total_times = df.groupby('STUDENTID').time_unix.max() - df.groupby('STUDENTID').time_unix.min()
+# plt.figure()
+# plt.hist(total_times / 1000 / 60, bins=50)
+# plt.savefig('graphs/hist-totaltime.png')
+# print(total_times.sort_values() / 1000 / 60)
+
+# Does running into a timeout message indicate incompleteness? Not really.
+# timeout = ['SecTimeOut' in pid_df.AccessionNumber.values for _, pid_df in df.groupby('STUDENTID')]
+# print('\nProp. students encountering SecTimeOut:', np.mean(timeout))
+# labels = [pid_df.label.iloc[0] for _, pid_df in df.groupby('STUDENTID')]
+# print('Timeout <=> label correlation:', np.corrcoef(timeout, labels)[0, 1])
+# timeleft = ['EOSTimeLft' in pid_df.AccessionNumber.values for _, pid_df in df.groupby('STUDENTID')]
+# Seems like there is almost no overlap between time left and timeout (nearly complementary)
+# print('Prop. students encountering EOSTimeLft:', np.mean(timeleft))
+# print('Prop. students encountering EOSTimeLft and SecTimeOut:',
+#       np.mean(np.array(timeout) & np.array(timeleft)))
+
+# Does repeating the same ExtendedInfo indicate button mashing? It does seem to correlate w/label.
+# Possibly different for different items (TTS vs answer selection, for example)
+# Horizontal item scroll is the strongest correlation despite very low n
+repeats = {}
+labels = []
+for _, pid_df in tqdm(df.groupby('STUDENTID'), desc='Finding repeat ExtendedInfo'):
+    labels.append(pid_df.label.iloc[0])
+    for obs, obs_df in pid_df.groupby('Observable'):
+        if obs not in repeats:
+            repeats[obs] = []
+        repeats[obs].append(len(obs_df) - len(obs_df.ExtendedInfo.unique()))
+for obs in repeats:
+    print(obs, 'repeats rho:', pd.Series(repeats[obs]).corr(pd.Series(labels), method='spearman'))
