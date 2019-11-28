@@ -9,8 +9,9 @@
 #   SD of time spent across items
 #   Num times entered each item
 #   Rank of popularity of answers to questions
-#   Count of top-k ranked answers for different k
+#   Count of k-ranked answers for different k
 #   Count of unanswered questions
+#   Count of repeated actions
 #   Coefficients of polynomials fit to time spent per problem
 #   Coefficients of polynomials fit to overall timeseries
 from collections import OrderedDict
@@ -57,9 +58,14 @@ def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
                if 'Enter Item' in v.Observable.values},
             **{'repeat_extended_' + o: len(v) - len(v.ExtendedInfo.unique())
                for o, v in pid_df.groupby('Observable')},
+            **{'repeat_observable_' + o:
+               ((pid_df.Observable == o) & (pid_df.Observable.shift(1) == o)).sum()
+               for o in pid_df.Observable.unique()}
         }))
-        rows[-1]['percentile5_vh_count'] = \
-            sum(v for k, v in rows[-1].items() if k.startswith('percentile5_'))
+        percentile5_map = {i[12:]: v for i, v in rows[-1].items() if i.startswith('percentile5_')}
+        rows[-1]['percentile5_count'] = sum(percentile5_map.values())
+        rows[-1]['percentile5_count_actual'] = \
+            sum(v for k, v in percentile5_map.items() if k in actual_items)
         rows[-1]['sec_spent_std'] = \
             np.std([v for k, v in rows[-1].items() if k.startswith('sec_spent_')])
         actual_sec = [v for k, v in rows[-1].items() if k.startswith('sec_spent_') and
@@ -93,10 +99,19 @@ def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
                 rows[-1]['answer_rank_' + q_id] = answer_ranks[q_id][answers[q_id]]
             else:  # Unknown answer; must be from partial training data with a changed answer later
                 rows[-1]['answer_rank_' + q_id] = max(answer_ranks[q_id].values()) + 1
-        ranks = np.array([v for col, v in rows[-1].items() if col.startswith('answer_rank_')])
+        ranks = {col[12:]: v for col, v in rows[-1].items() if col.startswith('answer_rank_')}
         for k in range(1, 6):  # Ranks start at 1
-            rows[-1]['answer_count_top' + str(k)] = (ranks <= k).sum()
-        rows[-1]['answer_count_unanswered'] = (ranks == 1000).sum()
+            rows[-1]['answer_count_rank' + str(k)] = (np.array(list(ranks.values())) == k).sum()
+        rows[-1]['answer_rank_sum'] = sum(v for v in ranks.values() if v != 1000)
+        rows[-1]['answer_rank_std'] = np.std([v for v in ranks.values() if v != 1000])
+        rows[-1]['answer_count_unanswered'] = (np.array(list(ranks.values())) == 1000).sum()
+        most_diff = ['VH139196_A,1', 'VH134366_5', 'VH134366_4', 'VH134366_3', 'VH134366_2',
+                     'VH134366_1', 'VH098779', 'VH098597', 'VH098556', 'VH098522', 'VH098519']
+        diff_ranks = np.array([v for k, v in ranks.items() if k in most_diff and v != 1000])
+        rows[-1]['answer_rank_discriminative_sum'] = diff_ranks.sum()
+        rows[-1]['answer_rank_discriminative_std'] = diff_ranks.std()
+        for k in range(1, 6):
+            rows[-1]['answer_count_discriminative_rank' + str(k)] = (diff_ranks == k).sum()
     X = pd.DataFrame.from_records(rows)
     features = [f for f in X.columns if f not in ['STUDENTID', 'label']]
     for col in features:
@@ -106,10 +121,9 @@ def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
 
 
 print('Loading data')
-df = load_data.all_unique_rows()
 item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.05)
-                        for i, v in df.groupby('AccessionNumber')}
-student_answers = misc_util.final_answers_from_df(df, verbose=1)
+                        for i, v in load_data.all_full_rows().groupby('AccessionNumber')}
+student_answers = misc_util.final_answers_from_df(load_data.all_unique_rows(), verbose=1)
 question_answer_counts = misc_util.answer_counts(student_answers)
 
 # Set up feature importance model training parameters
@@ -140,6 +154,17 @@ for dsname in dfs:
     print('\nFeatures for', dsname)
     tx, ty, feat_names = extract_features(dfs[dsname], item_5percentile_map, question_answer_counts)
     feat_ys[dsname] = ty
+    # Extract additional features from the first 5 minutes
+    print('Features from the first five minutes of data')
+    first5 = dfs[dsname]
+    ms_start = first5.groupby('STUDENTID').time_unix.min()
+    first5_end = pd.Series([ms_start[pid] + 5 * 60 * 1000 for pid in first5.STUDENTID],
+                           index=first5.index)
+    first5 = first5[first5.time_unix < first5_end]
+    first5x, _, _ = extract_features(first5, item_5percentile_map, question_answer_counts)
+    for f in feat_names:
+        if f in first5x:
+            tx[f + '_first5'] = first5x[f]
     if dsname.endswith('30m'):  # Extract additional features from last 5 minutes
         print('Features from the last five minutes of data')
         last5 = dfs[dsname]
@@ -151,17 +176,21 @@ for dsname in dfs:
         for f in feat_names:
             if f in last5x:
                 tx[f + '_last5'] = last5x[f]
-        feat_names.extend([f for f in tx if f.endswith('_last5')])
+    feat_names.extend([f for f in tx if f.endswith('_last5') or f.endswith('_first5')])
     # Remove 0-variance features since they will cause problems for calculating correlations
     feat_names = [f for f in feat_names if len(tx[f].unique()) > 1]
     print(len(feat_names), 'features')
-    fsets = misc_util.uncorrelated_feature_sets(tx[feat_names], max_rho=.8,
-                                                remove_perfect_corr=True, verbose=1)
+    # Prioritize keeping overall features first, then keeping last-5 features (over first-5)
+    priority = [f for f in feat_names if not f.endswith('_last5') and not f.endswith('_first5')] + \
+        [f for f in feat_names if f.endswith('_last5')]
+    fsets = misc_util.uncorrelated_feature_sets(tx[feat_names], max_rho=.9,
+                                                remove_perfect_corr=True, verbose=1,
+                                                priority_order=priority)
     print(len(fsets[0]), 'features after removing highly-correlated features')
     feat_dfs[dsname] = tx[['STUDENTID'] + fsets[0]]
 
 for datalen in ['10m', '20m', '30m']:
-    print('Building feature importance model for', datalen)
+    print('\nBuilding feature importance model for', datalen)
     train_X, train_y = feat_dfs['train_' + datalen], feat_ys['train_' + datalen]
     holdout_X = feat_dfs['holdout_' + datalen]
     feat_names = [f for f in train_X if f in holdout_X.columns and f != 'STUDENTID']
@@ -170,7 +199,8 @@ for datalen in ['10m', '20m', '30m']:
     imp_m = gs.fit(train_X[feat_names], train_y).best_estimator_
     importances = pd.Series(imp_m.named_steps['model'].feature_importances_, index=feat_names)
     # Pick only important features and save
-    feat_names = [f for f in feat_names if importances[f] > .001]
+    feat_names = [f for f in feat_names if importances[f] > .00001]
+    print(importances.sort_values())
     print(len(feat_names), 'features after keeping only important features')
     train_X[['STUDENTID'] + feat_names].to_csv('features_fe/train_' + datalen + '.csv', index=False)
     holdout_X[['STUDENTID'] + feat_names].to_csv(

@@ -13,9 +13,13 @@ from sklearn import model_selection, metrics, tree
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
-def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, verbose=0):
+def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, verbose=0,
+                              priority_order=[]):
     """Given a dataset with some features, return a list of lists, where each sublist is a set of
-    feature names such that no pair of features are correlated more than `max_rho`.
+    feature names such that no pair of features are correlated more than `max_rho`. Ties will be
+    broken among pairs of highly-correlated features by removing the feature with higher mean
+    correlation with other features, unless tie-break preferences for either/both features are given
+    in `priority_order`.
 
     Args:
         pandas_df (pd.DataFrame): Dataset, where every column is assumed to be a numeric feature
@@ -23,6 +27,7 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
         remove_perfect_corr (bool): If True, when a pair of features correlate perfectly (rho = 1),
                                     remove one of them completely from consideration
         verbose (int): Verbosity level
+        priority_order (array-like): Feature names to prefer keeping (highest preference first)
 
     Returns:
         list of lists: One or more sets of uncorrelated features
@@ -35,9 +40,14 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
                 rho.at[a, b] = 0
             else:
                 rho.at[a, b] = rho.at[b, a] = abs(stats.spearmanr(pandas_df[a], pandas_df[b])[0])
+    if verbose > 3:
+        print(rho)
     if rho.isnull().sum().sum() > 0:
         raise ValueError('Correlation matrix had NaN values; check that there are no missing values'
                          ' in inputs, and that each input feature has some variance')
+
+    # Convert priority_order to a dict for faster/easier lookups
+    priority = {f: i for i, f in enumerate(priority_order)}
 
     result = []
     current_set = list(pandas_df.columns)
@@ -50,8 +60,14 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
             b = rho.loc[a, current_set].idxmax()
             if verbose > 2:
                 print(a, 'correlated with', b, 'rho =', rho.at[a, b])
-            # Break ties based on which of the pair has higher mean correlation with other features
-            to_remove = a if rho.loc[a, current_set].mean() > rho.loc[b, current_set].mean() else b
+            # Break ties based on which has higher mean correlation unless priority order is given
+            to_remove = a
+            if a in priority:
+                to_remove = b if b not in priority or priority[a] < priority[b] else a
+            elif b in priority:
+                pass
+            elif rho.loc[a, current_set].mean() < rho.loc[b, current_set].mean():
+                to_remove = b
             if highest_corr < 1 or not remove_perfect_corr:
                 next_set.append(to_remove)
             current_set.remove(to_remove)
@@ -113,17 +129,27 @@ def final_answers_from_df(df, verbose=0):
                 subq = row.ExtendedInfo.replace('Part ', '').replace(', 1', ',1')  # Fix VH139196
                 answer = ''
             elif row.Observable == 'Math Keypress' or row.Observable == 'Equation Editor Button':
-                answer = json.loads(row.ExtendedInfo)['contentLaTeX']
-                answer = re.sub(r'(\.0*\$|\$|\\| |mathrm\{\w*\}|overline\{\})', '', answer)
+                jdata = json.loads(row.ExtendedInfo)
+                answer = re.sub(r'(\$|\\| |mathrm\{\w*\}|overline\{\})', '', jdata['contentLaTeX'])
+                # Some actions don't show up immediately in contentLaTeX and must be appended
+                if '{' not in answer:  # If there is a frac{} or anything going on, just give up
+                    code = jdata['code'] if 'code' in jdata else ''
+                    if code == 'Period':
+                        answer += '.'
+                    elif code.startswith('Digit'):
+                        answer += code[5]
                 try:  # Parse fractions (ambitious...)
                     answer = re.sub(r'frac\{(-?\d+)\}\{(-?\d+)\}',
                                     lambda m: str(float(m.group(1)) /
                                                   float(m.group(2))).lstrip('0'), answer)
                 except:
                     pass  # Cannot even begin to imagine the parsing errors
-                answer = re.sub(r'^0\.', '.', answer)  # Leading 0 for decimals < 1
-                answer = re.sub(r'(?<=\.)0$', '', answer)  # Unnecessary trailing decimal zeros
                 answer = answer.replace('^circ', '')
+                answer = re.sub(r'^0\.', '.', answer)  # Leading 0 for decimals < 1
+                if '.' in answer:
+                    answer = re.sub(r'0+$', '', answer)  # Unnecessary trailing decimal zeros
+                    if answer[-1] == '.':
+                        answer = answer[:-1]  # Remove .0's
             elif row.Observable == 'Lose Focus':
                 try:
                     answers[row.STUDENTID][row.AccessionNumber + '_' + subq] = answer
@@ -302,7 +328,10 @@ def thresh_restricted_auk(y_true, y_pred, thresholds=100, auk_width=.1):
 if __name__ == '__main__':
     df = pd.DataFrame({'w': [2, 2, 3, 4, 5], 'x': [1, -2, 1, 3, 3], 'y': [5, 1, 3, 0, 1],
                        'z': [1.1, -1, 1, 5, 5], 'w2': [2, 2, 3, 4, 5]})
-    print(uncorrelated_feature_sets(df, max_rho=.5, verbose=2, remove_perfect_corr=True))
+    print(uncorrelated_feature_sets(df, max_rho=.5, verbose=4, remove_perfect_corr=True))
+    print('\nWith prioritizing x over z:')
+    print(uncorrelated_feature_sets(df, max_rho=.5, verbose=4, remove_perfect_corr=True,
+                                    priority_order=['x', 'z']))
 
     truth = [0, 1, 1, 1, 0, 0, 1, 1]
     preds = [.1, .5, .4, .6, .2, .3, .2, .9]

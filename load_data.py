@@ -80,3 +80,8 @@ def all_unique_rows():
     # the training data (10m, 20m)
     return pd.concat([train_full(), holdout_10m(), holdout_20m(), holdout_30m()],
                      ignore_index=True, sort=False)
+
+
+def all_full_rows():
+    # Return all data from 30m sessions in training and holdout data
+    return pd.concat([train_full(), holdout_30m()], ignore_index=True, sort=False)

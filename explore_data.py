@@ -1,4 +1,5 @@
 from pprint import pprint
+from collections import Counter
 
 import pandas as pd
 import numpy as np
@@ -113,9 +114,32 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 # all_df = load_data.all_unique_rows()
 # with pd.option_context('display.max_rows', None):
 #     print(all_df.groupby(['ItemType', 'Observable']).size())
-# answers = misc_util.final_answers_from_df(all_df)
+# answers = misc_util.final_answers_from_df(all_df, verbose=1)
 # questions = misc_util.answer_counts(answers)
 # pprint(questions)
+# print('true1 pred1:')
+# pprint(answers[2333267544])
+# for q, a in answers[2333267544].items():
+#     print('Q:', q, 'A:', a, 'rank:', misc_util.answer_ranks(questions[q])[a])
+# print('\ntrue0 pred1:')
+# pprint(answers[2333170834])
+# for q, a in answers[2333170834].items():
+#     print('Q:', q, 'A:', a, 'rank:', misc_util.answer_ranks(questions[q])[a])
+# print('\nPositive class modal ranks:')
+# answer_ranks = {q: misc_util.answer_ranks(c) for q, c in questions.items()}
+# pos_ranks = {q: np.array([answer_ranks[q][answers[p][q]]
+#                           for p in df[df.label == 1].STUDENTID.unique() if q in answers[p]])
+#              for q in answer_ranks}
+# neg_ranks = {q: np.array([answer_ranks[q][answers[p][q]]
+#                           for p in df[df.label == 0].STUDENTID.unique() if q in answers[p]])
+#              for q in answer_ranks}
+# pos_count = len(df[df.label == 1].STUDENTID.unique())
+# neg_count = len(df[df.label == 0].STUDENTID.unique())
+# for q in sorted(pos_ranks):
+#     print('\nQ:', q, 'Positive class most common:', Counter(pos_ranks[q]).most_common(4))
+#     print('Q:', q, 'Negative class most common:', Counter(neg_ranks[q]).most_common(4))
+#     print('Q:', q, 'Positive class rank 1 prop:', np.sum(pos_ranks[q] == 1) / pos_count)
+#     print('Q:', q, 'Negative class rank 1 prop:', np.sum(neg_ranks[q] == 1) / neg_count)
 
 # How long are periods of activity/inactivity?
 # print('\nAction duration descriptives (in seconds):')
@@ -157,13 +181,36 @@ print(df[['AccessionNumber', 'delta_time_ms']].head())
 # Does repeating the same ExtendedInfo indicate button mashing? It does seem to correlate w/label.
 # Possibly different for different items (TTS vs answer selection, for example)
 # Horizontal item scroll is the strongest correlation despite very low n
-repeats = {}
+# repeats = {}
+# consec = {}
+# labels = []
+# for _, pid_df in tqdm(df.groupby('STUDENTID'), desc='Finding repeat ExtendedInfo'):
+#     labels.append(pid_df.label.iloc[0])
+#     for obs, obs_df in pid_df.groupby('Observable'):
+#         if obs not in repeats:
+#             repeats[obs] = []
+#             consec[obs] = []
+#         repeats[obs].append(len(obs_df) - len(obs_df.ExtendedInfo.unique()))
+#         consec[obs].append(((pid_df.Observable == obs) & (pid_df.Observable.shift(1) == obs)).sum())
+# for obs in repeats:
+#     print(obs, 'repeats rho:', pd.Series(repeats[obs]).corr(pd.Series(labels), method='spearman'))
+#     print(obs, 'consecutive rho:',
+#           pd.Series(consec[obs]).corr(pd.Series(labels), method='spearman'))
+
+# Is usage of calculator (number of actions in ExtendedInfo) good? Barely.
 labels = []
-for _, pid_df in tqdm(df.groupby('STUDENTID'), desc='Finding repeat ExtendedInfo'):
+buffer_lens = []
+for _, pid_df in tqdm(df.groupby('STUDENTID'), desc='Calculator buffer length'):
     labels.append(pid_df.label.iloc[0])
-    for obs, obs_df in pid_df.groupby('Observable'):
-        if obs not in repeats:
-            repeats[obs] = []
-        repeats[obs].append(len(obs_df) - len(obs_df.ExtendedInfo.unique()))
-for obs in repeats:
-    print(obs, 'repeats rho:', pd.Series(repeats[obs]).corr(pd.Series(labels), method='spearman'))
+    buffer_lens.append(np.array([len(r.ExtendedInfo.split(',')) for _, r in
+                                 pid_df[pid_df.Observable == 'Calculator Buffer'].iterrows()]))
+    if len(buffer_lens[-1]) == 0:
+        buffer_lens[-1] = np.array([0])
+print('Buffer len mean rho:',
+      pd.Series(labels).corr(pd.Series([l.mean() for l in buffer_lens]), method='spearman'))
+print('Buffer len std rho:',
+      pd.Series(labels).corr(pd.Series([l.std() for l in buffer_lens]), method='spearman'))
+print('Buffer len max rho:',
+      pd.Series(labels).corr(pd.Series([l.max() for l in buffer_lens]), method='spearman'))
+print('Buffer len sum rho:',
+      pd.Series(labels).corr(pd.Series([l.sum() for l in buffer_lens]), method='spearman'))
