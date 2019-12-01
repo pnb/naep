@@ -22,10 +22,11 @@ print('Loading labels from original data')
 label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
 
 # Set up model training parameters
-m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+# m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+m = ensemble.RandomForestClassifier(400, random_state=RANDOM_SEED)
 # m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
 bayes_grid = {
-    'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees
+    'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees/random forest options
     'model__max_features': space.Real(.001, 1),
     'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
     'model__criterion': ['gini', 'entropy'],
@@ -82,7 +83,6 @@ for datalen in ['10m', '20m', '30m']:
     features = [f for f in features if f not in high_diff_feats]
     print(len(features), 'features after removing those with differing train/holdout distributions')
     # TODO: Might be able to tune max_rho to get a higher AUC vs. higher kappa for later fusion
-    # TODO: try prioritize features very likely related to outcome# priority = [f for f in features if 'percentile5_' in f or 'answer_' in f]
     fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=.8,
                                                 remove_perfect_corr=True, verbose=2)
     features = fsets[0]
