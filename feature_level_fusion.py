@@ -23,29 +23,24 @@ label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterr
 
 # Set up model training parameters
 # m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
-m = ensemble.RandomForestClassifier(400, random_state=RANDOM_SEED)
-# m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
+# m = ensemble.RandomForestClassifier(400, random_state=RANDOM_SEED)
+m = xgboost.XGBClassifier(objective='binary:logistic', random_state=RANDOM_SEED)
 bayes_grid = {
-    'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees/random forest options
-    'model__max_features': space.Real(.001, 1),
-    'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
-    'model__criterion': ['gini', 'entropy'],
-    'model__bootstrap': [True, False],
+    # 'model__min_samples_leaf': space.Integer(1, 50),  # Extra-Trees/random forest options
+    # 'model__max_features': space.Real(.001, 1),
+    # 'model__n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
+    # 'model__criterion': ['gini', 'entropy'],
+    # 'model__bootstrap': [True, False],
 
-    # 'model__max_depth': space.Integer(1, 12),  # XGBoost
-    # 'model__learning_rate': space.Real(.0001, .5),
-    # 'model__n_estimators': space.Integer(5, 200),
-    # 'model__gamma': space.Real(0, 8),
-    # 'model__subsample': space.Real(.1, 1),
-    # 'model__colsample_bynode': space.Real(.1, 1),
-    # 'model__reg_alpha': space.Real(0, 8),
-    # 'model__reg_lambda': space.Real(0, 8),
-}
-grid = {
-    # 'uncorrelated_fs__max_rho': [.4, .5, .55, .6, .65, .7, .75, .8, .85, .9],
-
-    'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
+    'model__max_depth': space.Integer(1, 12),  # XGBoost
+    'model__learning_rate': space.Real(.0001, .5),
+    'model__n_estimators': space.Integer(5, 200),
+    'model__gamma': space.Real(0, 8),
+    'model__subsample': space.Real(.1, 1),
+    'model__colsample_bynode': space.Real(.1, 1),
+    'model__reg_alpha': space.Real(0, 8),
+    'model__reg_lambda': space.Real(0, 8),
+    'model__num_parallel_tree': space.Integer(1, 10),
 }
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 pipe = pipeline.Pipeline([
@@ -113,5 +108,5 @@ for datalen in ['10m', '20m', '30m']:
         hidden_result.loc[hidden_result.STUDENTID == pid, 'pred'] = pred
         hidden_result.loc[hidden_result.STUDENTID == pid, 'data_length'] = datalen
 
-hidden_result.to_csv('feature_level_fusion.csv', index=False)
-pd.DataFrame.from_records(train_result).to_csv('feature_level_fusion-train.csv', index=False)
+hidden_result.to_csv('predictions/xgboost.csv', index=False)
+pd.DataFrame.from_records(train_result).to_csv('predictions/xgboost-train.csv', index=False)

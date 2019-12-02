@@ -15,7 +15,12 @@ VALIDITY_REGEX = r'^(\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*,){1231}\s*0*((
 plt.style.use('nigel.mplstyle')
 
 
-df = pd.read_csv('feature_level_fusion.csv')
+df = pd.read_csv('predictions/extra_trees.csv')
+df2 = pd.read_csv('predictions/random_forest.csv')
+assert all(df.STUDENTID.values == df2.STUDENTID.values), 'Prediction file mismatch'
+# Random forest seems maybe slightly better for 10m and 20m, and worse for 30m
+df.loc[df.data_length == '10m', 'pred'] = df2[df2.data_length == '10m'].pred
+df.loc[df.data_length == '20m', 'pred'] = df2[df2.data_length == '20m'].pred
 
 print('Jensen-Shannon distances between prediction sets (square root of divergence):')
 print('JSD 10 <=> 20:', jensenshannon(df[df.data_length == '10m'].pred,
@@ -41,14 +46,19 @@ plt.ylabel('Count')
 plt.show()
 
 # Rescale predictions to try improve kappa
-train_preds = pd.read_csv('feature_level_fusion-train.csv')
+train_preds = pd.read_csv('predictions/extra_trees-train.csv')
+train_preds2 = pd.read_csv('predictions/random_forest-train.csv')
+train_preds.loc[train_preds.data_length == '10m', 'pred'] = \
+    train_preds2[train_preds2.data_length == '10m'].pred
+train_preds.loc[train_preds.data_length == '20m', 'pred'] = \
+    train_preds2[train_preds2.data_length == '20m'].pred
 plt.figure()
 for datalen, dldf in train_preds.groupby('data_length'):
     # Plot kappa over decision thresholds
     kappas = [metrics.cohen_kappa_score(dldf.label, dldf.pred > t)
               for t in tqdm(np.linspace(0, 1, 101), desc='Calculating kappas')]
     plt.plot(np.linspace(0, 1, len(kappas)), kappas, label=datalen + ' max = %.3f' % max(kappas))
-    # Adjust predictions to match ideal threshold
+    # Adjust predictions in holdout data to match ideal training data threshold
     thresh = np.argmax(kappas) / (len(kappas) - 1)
     print(datalen, 'ideal threshold =', thresh)
     dfpreds = df[df.data_length == datalen].pred
