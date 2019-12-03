@@ -18,9 +18,12 @@ plt.style.use('nigel.mplstyle')
 df = pd.read_csv('predictions/extra_trees.csv')
 df2 = pd.read_csv('predictions/random_forest.csv')
 assert all(df.STUDENTID.values == df2.STUDENTID.values), 'Prediction file mismatch'
-# Random forest seems maybe slightly better for 10m and 20m, and worse for 30m
-df.loc[df.data_length == '10m', 'pred'] = df2[df2.data_length == '10m'].pred
-df.loc[df.data_length == '20m', 'pred'] = df2[df2.data_length == '20m'].pred
+# Random forest seems much worse for 30m
+df.loc[df.data_length == '10m', 'pred'] = \
+    df[df.data_length == '10m'].pred * .5 + df2[df2.data_length == '10m'].pred * .5
+df.loc[df.data_length == '20m', 'pred'] = \
+    df[df.data_length == '20m'].pred * .5 + df2[df2.data_length == '20m'].pred * .5
+# df = pd.read_csv('predictions/xgboost.csv')
 
 print('Jensen-Shannon distances between prediction sets (square root of divergence):')
 print('JSD 10 <=> 20:', jensenshannon(df[df.data_length == '10m'].pred,
@@ -49,9 +52,12 @@ plt.show()
 train_preds = pd.read_csv('predictions/extra_trees-train.csv')
 train_preds2 = pd.read_csv('predictions/random_forest-train.csv')
 train_preds.loc[train_preds.data_length == '10m', 'pred'] = \
-    train_preds2[train_preds2.data_length == '10m'].pred
+    train_preds[train_preds.data_length == '10m'].pred * .5 + \
+    train_preds2[train_preds2.data_length == '10m'].pred * .5
 train_preds.loc[train_preds.data_length == '20m', 'pred'] = \
-    train_preds2[train_preds2.data_length == '20m'].pred
+    train_preds[train_preds.data_length == '20m'].pred * .5 + \
+    train_preds2[train_preds2.data_length == '20m'].pred * .5
+# train_preds = pd.read_csv('predictions/xgboost-train.csv')
 plt.figure()
 for datalen, dldf in train_preds.groupby('data_length'):
     # Plot kappa over decision thresholds
@@ -64,8 +70,10 @@ for datalen, dldf in train_preds.groupby('data_length'):
     dfpreds = df[df.data_length == datalen].pred
     print('Holdout predicted rate at that threshold =', (dfpreds > thresh).mean())
     print(((dfpreds - thresh).abs() < .0001).sum(), datalen, 'predictions at exactly threshold')
-    assert thresh >= .5, 'Rescaling equation will not work with threshold < .5'
-    df.loc[dfpreds.index, 'pred'] = dfpreds / thresh / 2
+    if thresh >= .5:
+        df.loc[dfpreds.index, 'pred'] = dfpreds / thresh / 2
+    else:
+        df.loc[dfpreds.index, 'pred'] = 1 - (1 - dfpreds) / (1 - thresh) / 2
 plt.legend(loc='upper left')
 plt.show()
 
