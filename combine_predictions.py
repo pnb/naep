@@ -16,13 +16,13 @@ plt.style.use('nigel.mplstyle')
 
 
 df = pd.read_csv('predictions/extra_trees.csv')
-df2 = pd.read_csv('predictions/random_forest.csv')
-assert all(df.STUDENTID.values == df2.STUDENTID.values), 'Prediction file mismatch'
+# df2 = pd.read_csv('predictions/random_forest.csv')
+# assert all(df.STUDENTID.values == df2.STUDENTID.values), 'Prediction file mismatch'
 # Random forest seems much worse for 30m
-df.loc[df.data_length == '10m', 'pred'] = \
-    df[df.data_length == '10m'].pred * .5 + df2[df2.data_length == '10m'].pred * .5
-df.loc[df.data_length == '20m', 'pred'] = \
-    df[df.data_length == '20m'].pred * .5 + df2[df2.data_length == '20m'].pred * .5
+# df.loc[df.data_length == '10m', 'pred'] = \
+#     df[df.data_length == '10m'].pred * .5 + df2[df2.data_length == '10m'].pred * .5
+# df.loc[df.data_length == '20m', 'pred'] = \
+#     df[df.data_length == '20m'].pred * .5 + df2[df2.data_length == '20m'].pred * .5
 # df = pd.read_csv('predictions/xgboost.csv')
 
 print('Jensen-Shannon distances between prediction sets (square root of divergence):')
@@ -50,13 +50,13 @@ plt.show()
 
 # Rescale predictions to try improve kappa
 train_preds = pd.read_csv('predictions/extra_trees-train.csv')
-train_preds2 = pd.read_csv('predictions/random_forest-train.csv')
-train_preds.loc[train_preds.data_length == '10m', 'pred'] = \
-    train_preds[train_preds.data_length == '10m'].pred * .5 + \
-    train_preds2[train_preds2.data_length == '10m'].pred * .5
-train_preds.loc[train_preds.data_length == '20m', 'pred'] = \
-    train_preds[train_preds.data_length == '20m'].pred * .5 + \
-    train_preds2[train_preds2.data_length == '20m'].pred * .5
+# train_preds2 = pd.read_csv('predictions/random_forest-train.csv')
+# train_preds.loc[train_preds.data_length == '10m', 'pred'] = \
+#     train_preds[train_preds.data_length == '10m'].pred * .5 + \
+#     train_preds2[train_preds2.data_length == '10m'].pred * .5
+# train_preds.loc[train_preds.data_length == '20m', 'pred'] = \
+#     train_preds[train_preds.data_length == '20m'].pred * .5 + \
+#     train_preds2[train_preds2.data_length == '20m'].pred * .5
 # train_preds = pd.read_csv('predictions/xgboost-train.csv')
 plt.figure()
 for datalen, dldf in train_preds.groupby('data_length'):
