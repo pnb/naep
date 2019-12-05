@@ -27,7 +27,9 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
         remove_perfect_corr (bool): If True, when a pair of features correlate perfectly (rho = 1),
                                     remove one of them completely from consideration
         verbose (int): Verbosity level
-        priority_order (array-like): Feature names to prefer keeping (highest preference first)
+        priority_order (list of lists): Feature names to prefer keeping; each sublist will be given
+                                        preference over subsequent sublists, and over any features
+                                        not represented in any sublist
 
     Returns:
         list of lists: One or more sets of uncorrelated features
@@ -39,15 +41,15 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
             if a == b:
                 rho.at[a, b] = 0
             else:
-                rho.at[a, b] = rho.at[b, a] = abs(stats.spearmanr(pandas_df[a], pandas_df[b])[0])
+                rho.at[a, b] = rho.at[b, a] = \
+                    abs(pandas_df[a].corr(pandas_df[b], method='spearman'))
     if verbose > 3:
         print(rho)
     if rho.isnull().sum().sum() > 0:
-        raise ValueError('Correlation matrix had NaN values; check that there are no missing values'
-                         ' in inputs, and that each input feature has some variance')
+        raise ValueError('Correlation matrix had NaN values; check that each feature has variance')
 
     # Convert priority_order to a dict for faster/easier lookups
-    priority = {f: i for i, f in enumerate(priority_order)}
+    priority = {f: i for i, sublist in enumerate(priority_order) for f in sublist}
 
     result = []
     current_set = list(pandas_df.columns)
@@ -61,13 +63,19 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
             if verbose > 2:
                 print(a, 'correlated with', b, 'rho =', rho.at[a, b])
             # Break ties based on which has higher mean correlation unless priority order is given
-            to_remove = a
+            to_remove = None
             if a in priority:
-                to_remove = b if b not in priority or priority[a] < priority[b] else a
+                if b not in priority or priority[a] < priority[b]:
+                    to_remove = b
+                elif b in priority and priority[a] > priority[b]:
+                    to_remove = a
             elif b in priority:
-                pass
-            elif rho.loc[a, current_set].mean() < rho.loc[b, current_set].mean():
-                to_remove = b
+                to_remove = a
+            if not to_remove:  # Priority order not specified or a tie; use higher mean correlation
+                if rho.loc[a, current_set].mean() < rho.loc[b, current_set].mean():
+                    to_remove = b
+                else:
+                    to_remove = a
             if highest_corr < 1 or not remove_perfect_corr:
                 next_set.append(to_remove)
             current_set.remove(to_remove)
@@ -329,9 +337,9 @@ if __name__ == '__main__':
     df = pd.DataFrame({'w': [2, 2, 3, 4, 5], 'x': [1, -2, 1, 3, 3], 'y': [5, 1, 3, 0, 1],
                        'z': [1.1, -1, 1, 5, 5], 'w2': [2, 2, 3, 4, 5]})
     print(uncorrelated_feature_sets(df, max_rho=.5, verbose=4, remove_perfect_corr=True))
-    print('\nWith prioritizing x over z:')
+    print('\nWith prioritizing x over z and z over w2:')
     print(uncorrelated_feature_sets(df, max_rho=.5, verbose=4, remove_perfect_corr=True,
-                                    priority_order=['x', 'z']))
+                                    priority_order=[['x'], ['z']]))
 
     truth = [0, 1, 1, 1, 0, 0, 1, 1]
     preds = [.1, .5, .4, .6, .2, .3, .2, .9]
