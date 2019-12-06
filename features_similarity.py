@@ -135,31 +135,11 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
                     **{dist_name + '_quantile_neg_' + str(q): val
                        for q, val in zip(dist_quantiles, np.quantile(dist_neg, dist_quantiles))},
                 })
-    features = pd.DataFrame.from_records(list(features.values()))
-    feat_names = [f for f in features if f != 'STUDENTID' and f != 'label']
-
-    print(len(feat_names), 'features extracted')
-    fsets = misc_util.uncorrelated_feature_sets(features[feat_names], max_rho=.8,
-                                                remove_perfect_corr=True, verbose=1)
-    feat_names = fsets[0]
-    print(len(feat_names), 'features after removing highly correlated features')
-
-    print('Building feature importance model for', datalen)
-    train_X = features[features.STUDENTID.isin(train.STUDENTID)]
-    train_y = train_X.label
-    holdout_X = features[features.STUDENTID.isin(holdout.STUDENTID)]
-    imp = gs.fit(train_X[feat_names], train_y)
-    imp_m = imp.best_estimator_
-    importances = pd.Series(imp_m.named_steps['model'].feature_importances_, index=feat_names)
-    print(importances)
-    print('Grid search best kappa:', imp.best_score_)
-    feat_names = [f for f in feat_names if importances[f] > .001]  # TODO: This cutoff is maybe too low here (only 20 features) since the feature importances add up to 1; probably worth revisiting in other files too
-    print(len(feat_names), 'features after keeping only important features')
-    # misc_util.tree_error_analysis(train_X[feat_names], train_y, xval, ['negative', 'positive'],
-    #                               'graphs/seq_similarity_dt_' + datalen + '-')
 
     print('Saving features')
-    train_X[['STUDENTID'] + feat_names] \
-        .to_csv('features_similarity/train_' + datalen + '.csv', index=False)
-    holdout_X[['STUDENTID'] + feat_names] \
-        .to_csv('features_similarity/holdout_' + datalen + '.csv', index=False)
+    features = pd.DataFrame.from_records(list(features.values()))
+    feat_names = [f for f in features if f != 'label']
+    train_X = features[features.STUDENTID.isin(train.STUDENTID)].sort_values('STUDENTID')
+    holdout_X = features[features.STUDENTID.isin(holdout.STUDENTID)].sort_values('STUDENTID')
+    train_X[feat_names].to_csv('features_similarity/train_' + datalen + '.csv', index=False)
+    holdout_X[feat_names].to_csv('features_similarity/holdout_' + datalen + '.csv', index=False)
