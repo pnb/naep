@@ -2,6 +2,7 @@
 # Expected base rate, if it matters: 0.6038961038961039
 import re
 import os
+import argparse
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,15 +16,26 @@ VALIDITY_REGEX = r'^(\s*0*((0?\.[0-9]+)|(0\.?)|(1\.?)|(1\.0*))\s*,){1231}\s*0*((
 plt.style.use('nigel.mplstyle')
 
 
-df = pd.read_csv('predictions/extra_trees.csv')
-# df2 = pd.read_csv('predictions/random_forest.csv')
-# assert all(df.STUDENTID.values == df2.STUDENTID.values), 'Prediction file mismatch'
-# Random forest seems much worse for 30m
-# df.loc[df.data_length == '10m', 'pred'] = \
-#     df[df.data_length == '10m'].pred * .5 + df2[df2.data_length == '10m'].pred * .5
-# df.loc[df.data_length == '20m', 'pred'] = \
-#     df[df.data_length == '20m'].pred * .5 + df2[df2.data_length == '20m'].pred * .5
-# df = pd.read_csv('predictions/xgboost.csv')
+argparser = argparse.ArgumentParser(
+    description='Combine one or more predictions files (decision-level fusion) and adjust '
+    'thresholds to maximize kappa')
+argparser.add_argument('prediction_files', nargs='+', type=str,
+                       help='One or more filenames of holdout set predictions files; training '
+                       'prediction filename will be inferred by adding "-train"')
+args = argparser.parse_args()
+
+df = pd.read_csv(args.prediction_files[0]).rename(columns={'pred': 'pred_0'})
+train_df = pd.read_csv(
+    args.prediction_files[0].replace('.csv', '-train.csv')).rename(columns={'pred': 'pred_0'})
+for i in range(1, len(args.prediction_files)):
+    df['pred_' + str(i)] = pd.read_csv(args.prediction_files[i]).pred
+    train_df['pred_' + str(i)] = pd.read_csv(
+        args.prediction_files[i].replace('.csv', '-train.csv')).pred
+
+# Equal voting
+df['pred'] = df[[c for c in df if c.startswith('pred_')]].sum(axis=1) / len(args.prediction_files)
+train_df['pred'] = train_df[[c for c in train_df if c.startswith('pred_')]].sum(axis=1)
+train_df['pred'] /= len(args.prediction_files)
 
 print('Jensen-Shannon distances between prediction sets (square root of divergence):')
 print('JSD 10 <=> 20:', jensenshannon(df[df.data_length == '10m'].pred,
@@ -49,17 +61,8 @@ plt.ylabel('Count')
 plt.show()
 
 # Rescale predictions to try improve kappa
-train_preds = pd.read_csv('predictions/extra_trees-train.csv')
-# train_preds2 = pd.read_csv('predictions/random_forest-train.csv')
-# train_preds.loc[train_preds.data_length == '10m', 'pred'] = \
-#     train_preds[train_preds.data_length == '10m'].pred * .5 + \
-#     train_preds2[train_preds2.data_length == '10m'].pred * .5
-# train_preds.loc[train_preds.data_length == '20m', 'pred'] = \
-#     train_preds[train_preds.data_length == '20m'].pred * .5 + \
-#     train_preds2[train_preds2.data_length == '20m'].pred * .5
-# train_preds = pd.read_csv('predictions/xgboost-train.csv')
 plt.figure()
-for datalen, dldf in train_preds.groupby('data_length'):
+for datalen, dldf in train_df.groupby('data_length'):
     # Plot kappa over decision thresholds
     kappas = [metrics.cohen_kappa_score(dldf.label, dldf.pred > t)
               for t in tqdm(np.linspace(0, 1, 101), desc='Calculating kappas')]
