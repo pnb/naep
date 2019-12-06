@@ -8,7 +8,6 @@
 #   TODO: Item duration for last five minutes
 import logging
 
-from sklearn import ensemble, model_selection, pipeline, metrics
 from tsfresh.transformers import RelevantFeatureAugmenter
 from tqdm import tqdm
 import pandas as pd
@@ -16,8 +15,6 @@ import pandas as pd
 import load_data
 
 
-RANDOM_SEED = 11798
-CACHE_DIR = '/Users/pnb/sklearn_cache'
 logging.basicConfig()
 logging.getLogger().setLevel(logging.ERROR)  # Hide tsfresh calculate_relevance_table() warnings
 
@@ -54,41 +51,24 @@ def format_timeseries(pandas_df):
     return X_df, y_df, ts_dfs
 
 
-# Set up feature importance model
-augmenter = RelevantFeatureAugmenter(column_id='instance_index', column_value='ts')
-m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
-grid = {
-    'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
-}
-pipe = pipeline.Pipeline([
-    ('augmenter', augmenter),
-    ('model', m),
-], memory=CACHE_DIR)
-xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
-gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
-                                  scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-
-# Extract features and save the most important ones
-for datalen, train_df, holdout_df in [(10, load_data.train_10m(), load_data.holdout_10m()),
-                                      (20, load_data.train_20m(), load_data.holdout_20m()),
-                                      (30, load_data.train_full(), load_data.holdout_30m())]:
-    print('Processing data length', datalen)
+# Extract features
+for datalen, train_df, holdout_df in [('10m', load_data.train_10m(), load_data.holdout_10m()),
+                                      ('20m', load_data.train_20m(), load_data.holdout_20m()),
+                                      ('30m', load_data.train_full(), load_data.holdout_30m())]:
+    print('\nProcessing data length', datalen)
     train_X, train_y, train_ts = format_timeseries(train_df)
     holdout_X, _, holdout_ts = format_timeseries(holdout_df)
-    augmenter.set_timeseries_container(train_ts)
-    # Train and apply a TSFresh augmenter to extract features in training data
-    aug_m = gs.fit(train_X, train_y.label).best_estimator_
-    importances = pd.Series(data=aug_m.named_steps['model'].feature_importances_,
-                            index=aug_m.named_steps['augmenter'].feature_selector.relevant_features)
-    extracted_X = aug_m.named_steps['augmenter'].transform(train_X)
-    # Pick only important features to save (probably all of them in most cases)
-    extracted_X = extracted_X[importances[importances > .001].index]
-    extracted_X.insert(0, 'STUDENTID', extracted_X.index)
-    extracted_X.to_csv('features_tsfresh/train_' + str(datalen) + 'm.csv', index=False)
-    # Now extract for corresponding holdout data
-    aug_m.named_steps['augmenter'].set_timeseries_container(holdout_ts)
-    extracted_X = aug_m.named_steps['augmenter'].transform(holdout_X)
-    extracted_X = extracted_X[importances[importances > .001].index]
-    extracted_X.insert(0, 'STUDENTID', extracted_X.index)
-    extracted_X.to_csv('features_tsfresh/holdout_' + str(datalen) + 'm.csv', index=False)
+
+    # Fit and apply a TSFRESH augmenter to extract features in training data
+    augmenter = RelevantFeatureAugmenter(column_id='instance_index', column_value='ts',
+                                         timeseries_container=train_ts)
+    tsfresh_train_X = augmenter.fit_transform(train_X, train_y.label)
+    tsfresh_train_X.insert(0, 'STUDENTID', train_X.index)
+    tsfresh_train_X.to_csv('features_tsfresh/train_' + datalen + '.csv', index=False)
+    print(len(tsfresh_train_X.columns) - 1, 'relevant features extracted')
+
+    # Apply to holdout data
+    augmenter.set_timeseries_container(holdout_ts)
+    tsfresh_holdout_X = augmenter.transform(holdout_X)
+    tsfresh_holdout_X.insert(0, 'STUDENTID', holdout_X.index)
+    tsfresh_holdout_X.to_csv('features_tsfresh/holdout_' + datalen + '.csv', index=False)

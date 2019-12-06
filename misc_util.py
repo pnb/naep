@@ -13,6 +13,9 @@ from sklearn import model_selection, metrics, tree
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
+RANDOM_SEED = 11798
+
+
 def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, verbose=0,
                               priority_order=[]):
     """Given a dataset with some features, return a list of lists, where each sublist is a set of
@@ -237,7 +240,7 @@ def tree_error_analysis(X, y, cv, class_names, output_filename_prefix):
     scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
                'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
                'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
-    m = tree.DecisionTreeClassifier(min_samples_leaf=8, random_state=11798)
+    m = tree.DecisionTreeClassifier(min_samples_leaf=8, random_state=RANDOM_SEED)
     res = model_selection.cross_validate(m, X, y, scoring=scoring, verbose=1, cv=cv,
                                          return_estimator=True)
     err_df = pd.DataFrame(index=X.index, data={'pred': '', 'truth': y, 'fold': '', 'leaf_size': ''})
@@ -275,7 +278,7 @@ def per_feature_analysis(X, y, cv):
     scoring = {'AUC': metrics.make_scorer(metrics.roc_auc_score, needs_proba=True),
                'MCC': metrics.make_scorer(metrics.cohen_kappa_score),
                'Kappa': metrics.make_scorer(metrics.matthews_corrcoef)}
-    m = tree.DecisionTreeClassifier(min_samples_leaf=8, random_state=11798)
+    m = tree.DecisionTreeClassifier(min_samples_leaf=8, random_state=RANDOM_SEED)
     result = []
     for feat in tqdm(X.columns, desc='Building 1-feature models'):
         scores = model_selection.cross_validate(m, X[[feat]], y, scoring=scoring, cv=cv,

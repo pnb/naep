@@ -14,21 +14,26 @@
 #   Count of repeated actions
 #   Coefficients of polynomials fit to time spent per problem
 #   Coefficients of polynomials fit to overall timeseries
+#   Correlation between problem correctness and problem order
 from collections import OrderedDict
 import warnings
 
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from sklearn import ensemble, model_selection, pipeline, metrics
 
 import load_data
 import misc_util
 
 
 RANDOM_SEED = 11798
-CACHE_DIR = '/Users/pnb/sklearn_cache'
-warnings.filterwarnings('ignore', message='Polyfit may be poorly conditioned')
+warnings.filterwarnings('ignore', 'Polyfit may be poorly conditioned')  # Polynomial features
+warnings.filterwarnings('ignore', 'invalid value encountered in true_divide')  # Corr feature
+warnings.filterwarnings('ignore', 'invalid value encountered in multiply')  # Corr feature
+warnings.filterwarnings('ignore', 'Degrees of freedom <= 0 for slice')  # Corr feature
+warnings.filterwarnings('ignore', 'invalid value encountered in double_scalars')
+warnings.filterwarnings('ignore', 'divide by zero encountered in true_divide')
+warnings.filterwarnings('ignore', 'Mean of empty slice.')
 
 
 def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
@@ -92,7 +97,7 @@ def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
                     rows[-1]['poly_' + ts_name + '_deg' + str(poly_degree) + '_coeff' + str(i)] = c
         # Popularity of answers to questions
         answers = misc_util.final_answers_from_df(pid_df)[pid]
-        for q_id, counts in question_answer_counts.items():
+        for q_id, _ in question_answer_counts.items():
             if q_id not in answers or answers[q_id] == '':
                 rows[-1]['answer_rank_' + q_id] = 1000
             elif answers[q_id] in answer_ranks[q_id]:  # Known answer
@@ -102,6 +107,7 @@ def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
         ranks = {col[12:]: v for col, v in rows[-1].items() if col.startswith('answer_rank_')}
         for k in range(1, 6):  # Ranks start at 1
             rows[-1]['answer_count_rank' + str(k)] = (np.array(list(ranks.values())) == k).sum()
+        rows[-1]['answer_count_rankother'] = sum(r > 5 and r < 1000 for r in ranks.values())
         rows[-1]['answer_rank_sum'] = sum(v for v in ranks.values() if v != 1000)
         rows[-1]['answer_rank_std'] = np.std([v for v in ranks.values() if v != 1000])
         rows[-1]['answer_count_unanswered'] = (np.array(list(ranks.values())) == 1000).sum()
@@ -112,8 +118,15 @@ def extract_features(pandas_df, item_5percentile_map, question_answer_counts):
         rows[-1]['answer_rank_discriminative_std'] = diff_ranks.std()
         for k in range(1, 6):
             rows[-1]['answer_count_discriminative_rank' + str(k)] = (diff_ranks == k).sum()
+        rows[-1]['answer_count_discriminative_rankother'] = (diff_ranks > 5).sum()
+        # Correlation between answer rank = 1 (correct-ish) and exercise order
+        ordered_rank1 = [int(rows[-1]['answer_rank_' + q] == 1)
+                         for q in pid_df.AccessionNumber.unique() if 'answer_rank_' + q in rows[-1]]
+        rows[-1]['answer_rank1_order_corr'] = np.corrcoef(ordered_rank1,
+                                                          np.arange(len(ordered_rank1)))[0, 1]
     X = pd.DataFrame.from_records(rows)
     features = [f for f in X.columns if f not in ['STUDENTID', 'label']]
+    # TODO: Maybe no longer necessary to fill NaNs with tree-based classifiers in sklearn 0.22?
     for col in features:
         X.loc[X[col].isnull(), col] = 0
     y = X.label if 'label' in pandas_df.columns else None
@@ -126,19 +139,6 @@ item_5percentile_map = {i: v.groupby('STUDENTID').delta_time_ms.sum().quantile(.
 student_answers = misc_util.final_answers_from_df(load_data.all_unique_rows(), verbose=1)
 question_answer_counts = misc_util.answer_counts(student_answers)
 
-# Set up feature importance model training parameters
-m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
-grid = {
-    'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
-}
-pipe = pipeline.Pipeline([
-    ('model', m),
-], memory=CACHE_DIR)
-xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
-gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
-                                  scoring=metrics.make_scorer(metrics.cohen_kappa_score))
-
 print('Loading holdout data')
 dfs = {
     'train_10m': load_data.train_10m(),
@@ -148,12 +148,10 @@ dfs = {
     'holdout_20m': load_data.holdout_20m(),
     'holdout_30m': load_data.holdout_30m(),
 }
-feat_dfs = {}
-feat_ys = {}
+
 for dsname in dfs:
     print('\nFeatures for', dsname)
     tx, ty, feat_names = extract_features(dfs[dsname], item_5percentile_map, question_answer_counts)
-    feat_ys[dsname] = ty
     # Extract additional features from the first 5 minutes
     print('Features from the first five minutes of data')
     first5 = dfs[dsname]
@@ -177,31 +175,5 @@ for dsname in dfs:
             if f in last5x:
                 tx[f + '_last5'] = last5x[f]
     feat_names.extend([f for f in tx if f.endswith('_last5') or f.endswith('_first5')])
-    # Remove 0-variance features since they will cause problems for calculating correlations
-    feat_names = [f for f in feat_names if len(tx[f].unique()) > 1]
-    print(len(feat_names), 'features')
-    # Prioritize keeping overall features first, then keeping last-5 features (over first-5)
-    priority = [f for f in feat_names if not f.endswith('_last5') and not f.endswith('_first5')] + \
-        [f for f in feat_names if f.endswith('_last5')]
-    fsets = misc_util.uncorrelated_feature_sets(tx[feat_names], max_rho=.9,
-                                                remove_perfect_corr=True, verbose=1,
-                                                priority_order=priority)
-    print(len(fsets[0]), 'features after removing highly-correlated features')
-    feat_dfs[dsname] = tx[['STUDENTID'] + fsets[0]]
-
-for datalen in ['10m', '20m', '30m']:
-    print('\nBuilding feature importance model for', datalen)
-    train_X, train_y = feat_dfs['train_' + datalen], feat_ys['train_' + datalen]
-    holdout_X = feat_dfs['holdout_' + datalen]
-    feat_names = [f for f in train_X if f in holdout_X.columns and f != 'STUDENTID']
-    print(len(feat_names), 'features after keeping only matching train/holdout features')
-
-    imp_m = gs.fit(train_X[feat_names], train_y).best_estimator_
-    importances = pd.Series(imp_m.named_steps['model'].feature_importances_, index=feat_names)
-    # Pick only important features and save
-    feat_names = [f for f in feat_names if importances[f] > .00001]
-    print(importances.sort_values())
-    print(len(feat_names), 'features after keeping only important features')
-    train_X[['STUDENTID'] + feat_names].to_csv('features_fe/train_' + datalen + '.csv', index=False)
-    holdout_X[['STUDENTID'] + feat_names].to_csv(
-        'features_fe/holdout_' + datalen + '.csv', index=False)
+    print('Saving', len(feat_names), 'features')
+    tx[['STUDENTID'] + feat_names].to_csv('features_fe/' + dsname + '.csv', index=False)
