@@ -93,5 +93,5 @@ for pid in feature_matrix_enc.index.unique():
 for source_file, feat_df in feature_matrix_enc.groupby('source_file'):
     # STUDENTID back to normal
     feat_df.insert(0, 'STUDENTID', [p[:p.index('_')] for p in feat_df.index])
-    feat_df.sort_values('STUDENTID') \
+    feat_df.reset_index(drop=True).sort_values('STUDENTID') \
         .to_csv('features_featuretools/' + source_file + '.csv', index=False)
