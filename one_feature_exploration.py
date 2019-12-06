@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore', message='invalid value encountered in double_s
 
 
 print('Loading labels from original data')
-label_map = {row.STUDENTID: row.label for _, row in load_data.train_full().iterrows()}
+label_map = {p: pdf.label.iloc[0] for p, pdf in load_data.train_full().groupby('STUDENTID')}
 
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 
@@ -22,9 +22,10 @@ for datalen in ['10m', '20m', '30m']:
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')
     for fset in ['tsfresh', 'featuretools', 'similarity']:
         tdf = pd.read_csv('features_' + fset + '/train_' + datalen + '.csv')
-        hdf = pd.read_csv('features_' + fset + '/holdout_' + datalen + '.csv')
+        assert all(tdf.STUDENTID == train_df.STUDENTID), fset + ' train STUDENTID mismatch'
         feat_names = [f for f in tdf if f not in train_df.columns]
         train_df[feat_names] = tdf[feat_names]
+    train_df = train_df.fillna(0)
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
     train_y = [label_map[p] for p in train_df.STUDENTID]
