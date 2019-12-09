@@ -55,20 +55,28 @@ for datalen in ['10m', '20m', '30m']:
     print('--- Supervised selection')
     xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
     acc_df = misc_util.per_feature_analysis(train_df[feat_names], train_df.label, xval)
-    feat_names = list(acc_df[acc_df.mean_test_kappa > 0].feature)
-    print(len(feat_names), 'features after keeping only kappa > 0 features')
+    feat_names = list(acc_df[acc_df.mean_test_auc > .5].feature)
+    print(len(feat_names), 'features after keeping only AUC > .5 features')
 
     print('--- Train vs. holdout distribution similarity selection')
     combo_df = pd.concat([train_df, holdout_df], sort=False).fillna(0)
     condition_y = [0] * len(train_df) + [1] * len(holdout_df)
-    acc_df = misc_util.per_feature_analysis(combo_df[feat_names], condition_y, xval)
-    feat_names = list(acc_df[acc_df.mean_test_kappa < .1].feature)
-    print(len(feat_names), 'features after discarding holdout vs. train classification kappa >= .1')
+    condition_df = misc_util.per_feature_analysis(combo_df[feat_names], condition_y, xval)
+    feat_names = list(condition_df[condition_df.mean_test_auc < .55].feature)
+    print(len(feat_names), 'features after discarding holdout vs. train classification AUC >= .55')
 
     print('--- Unsupervised selection')
-    # TODO: Try set priority order according to one-feature accuracy
-    fsets = misc_util.uncorrelated_feature_sets(train_df[feat_names], max_rho=.8, verbose=1,
-                                                remove_perfect_corr=True)
+    # Set priority order according to one-feature accuracy (essentially TCFS)
+    priority = []
+    prev_kappa = 999
+    for _, row in acc_df.sort_values('mean_test_kappa', ascending=False).iterrows():
+        if len(priority) == 0 or row.mean_test_kappa < prev_kappa:
+            priority.append([row.feature])
+        else:
+            priority[-1].append(row.feature)
+        prev_kappa = row.mean_test_kappa
+    fsets = misc_util.uncorrelated_feature_sets(train_df[feat_names], max_rho=.9, verbose=1,
+                                                remove_perfect_corr=True)#, priority_order=priority)
     feat_names = fsets[0]
     print(len(feat_names), 'features after removing highly-correlated features')
 

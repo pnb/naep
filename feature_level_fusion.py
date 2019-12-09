@@ -24,8 +24,6 @@ argparser.add_argument('model_type', type=str, choices=['extratrees', 'randomfor
                        help='Type of model to train (classifier)')
 argparser.add_argument('--entropy', action='store_true',
                        help='Split trees by information gain (default gini impurity)')
-argparser.add_argument('--bootstrap', action='store_true',
-                       help='Bootstrap samples in Extra-Trees or random forest')
 args = argparser.parse_args()
 
 print('Loading labels from original data')
@@ -34,15 +32,13 @@ label_map = {p: pdf.label.iloc[0] for p, pdf in load_data.train_full().groupby('
 # Set up model training parameters
 if args.model_type in ['extratrees', 'randomforest']:
     if args.model_type == 'extratrees':
-        m = ensemble.ExtraTreesClassifier(400, random_state=RANDOM_SEED)
+        m = ensemble.ExtraTreesClassifier(500, bootstrap=True, random_state=RANDOM_SEED)
     else:
-        m = ensemble.RandomForestClassifier(400, random_state=RANDOM_SEED)
+        m = ensemble.RandomForestClassifier(500, bootstrap=True, random_state=RANDOM_SEED)
     bayes_grid = {
         # 'min_samples_leaf': space.Integer(1, 50),
         'max_features': space.Real(.001, 1),
-        'n_estimators': space.Integer(100, 500),  # Higher should be better, but let's see
-        'bootstrap': [args.bootstrap],
-        'max_samples': space.Real(.001, .999) if args.bootstrap else [None],
+        'max_samples': space.Real(.001, .999),  # For bootstrapping
         'criterion': ['entropy' if args.entropy else 'gini'],
         'ccp_alpha': space.Real(0, .004),  # Range determined via ccp_alpha_explore.py
     }
@@ -59,8 +55,7 @@ elif args.model_type == 'xgboost':
         'reg_lambda': space.Real(0, 8),
         'num_parallel_tree': space.Integer(1, 10),
     }
-model_prefix = 'predictions/' + args.model_type + ('-bootstrap' if args.bootstrap else '') + \
-    ('-entropy' if args.entropy else '')
+model_prefix = 'predictions/' + args.model_type + ('-entropy' if args.entropy else '')
 
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
 scoring = metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True)
@@ -81,7 +76,7 @@ for datalen in ['10m', '20m', '30m']:
     feat_names = list(pd.read_csv('features_fe/filtered_features_' + datalen + '.csv').feature)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')[['STUDENTID'] + feat_names]
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')[['STUDENTID'] + feat_names]
-    for fset in ['features_tsfresh', 'features_featuretools', 'features_similarity']:
+    for fset in ['features_tsfresh', 'features_featuretools']: #, 'features_similarity']:
         feat_names = list(pd.read_csv(fset + '/filtered_features_' + datalen + '.csv').feature)
         tdf = pd.read_csv(fset + '/train_' + datalen + '.csv')[['STUDENTID'] + feat_names]
         hdf = pd.read_csv(fset + '/holdout_' + datalen + '.csv')[['STUDENTID'] + feat_names]
@@ -94,10 +89,10 @@ for datalen in ['10m', '20m', '30m']:
     features = [f for f in train_df if f not in ['STUDENTID', 'label']]
     print(len(features), 'features combined')
     # TODO: Might be able to tune max_rho to get a higher AUC vs. higher kappa for later fusion
-    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=9,
+    fsets = misc_util.uncorrelated_feature_sets(train_df[features], max_rho=1,
                                                 remove_perfect_corr=True, verbose=2)
     features = fsets[0]
-    print(len(features), 'features after removing highly correlated features')
+    print(len(features), 'features after removing perfectly correlated features')
     train_y = [label_map[p] for p in train_df.STUDENTID]
 
     # First cross-validate on training data to test accuracy on local (non-LB) data

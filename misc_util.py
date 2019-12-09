@@ -37,6 +37,7 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
     Returns:
         list of lists: One or more sets of uncorrelated features
     """
+    assert max_rho <= 1 and max_rho > 0, 'Maximum allowable correlation should be in (0, 1]'
     # Pairwise Spearman's rho correlation matrix with self-correlations set to 0
     rho = pd.DataFrame(index=pandas_df.columns, columns=pandas_df.columns, dtype=float)
     for i, a in enumerate(tqdm(pandas_df.columns, desc='Pairwise corr', disable=verbose < 1)):
@@ -60,7 +61,7 @@ def uncorrelated_feature_sets(pandas_df, max_rho=.8, remove_perfect_corr=False, 
     while True:
         # Find maximum pairwise correlation to see if further splitting of feature set is needed
         highest_corr = rho.loc[current_set, current_set].max().max()
-        if highest_corr > max_rho:
+        if highest_corr > max_rho or highest_corr == 1:
             a = rho.loc[current_set, current_set].max().idxmax()
             b = rho.loc[a, current_set].idxmax()
             if verbose > 2:
