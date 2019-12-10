@@ -287,10 +287,10 @@ def per_feature_analysis(X, y, cv):
         result.append(OrderedDict({
             'feature': feat,
             'mean_test_auc': np.mean(scores['test_AUC']),
-            'mean_test_mcc': np.mean(scores['test_MCC']),
+            'min_test_auc': min(scores['test_AUC']),
             'mean_test_kappa': np.mean(scores['test_Kappa']),
+            'min_test_kappa': min(scores['test_Kappa']),
             'mean_train_auc': np.mean(scores['train_AUC']),
-            'mean_train_mcc': np.mean(scores['train_MCC']),
             'mean_train_kappa': np.mean(scores['train_Kappa']),
         }))
     return pd.DataFrame.from_records(result)

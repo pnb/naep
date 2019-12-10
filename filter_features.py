@@ -55,8 +55,8 @@ for datalen in ['10m', '20m', '30m']:
     print('--- Supervised selection')
     xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
     acc_df = misc_util.per_feature_analysis(train_df[feat_names], train_df.label, xval)
-    feat_names = list(acc_df[acc_df.mean_test_auc > .5].feature)
-    print(len(feat_names), 'features after keeping only AUC > .5 features')
+    feat_names = list(acc_df[acc_df.min_test_auc > .5].feature)
+    print(len(feat_names), 'features after keeping only min AUC > .5 features')
 
     print('--- Train vs. holdout distribution similarity selection')
     combo_df = pd.concat([train_df, holdout_df], sort=False).fillna(0)
