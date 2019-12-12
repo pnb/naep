@@ -20,8 +20,6 @@ argparser = argparse.ArgumentParser(
     'with names like "train_30m.csv" and "holdout_10m.csv". Output will be written to files in the '
     'specified folder with names like "filtered_features_20m.csv"')
 argparser.add_argument('feature_folder', type=str, help='Path to folder with feature files')
-argparser.add_argument('--max-rho', type=float, default=.8,
-                       help="Maximum allowable Spearman's rho between features (default = .8)")
 args = argparser.parse_args()
 
 
@@ -66,17 +64,17 @@ for datalen in ['10m', '20m', '30m']:
     print(len(feat_names), 'features after discarding holdout vs. train classification AUC >= .55')
 
     print('--- Unsupervised selection')
-    # Set priority order according to one-feature accuracy (essentially TCFS)
+    # Set priority order according to one-feature accuracy (TCFS)
     priority = []
-    prev_kappa = 999
-    for _, row in acc_df.sort_values('mean_test_kappa', ascending=False).iterrows():
-        if len(priority) == 0 or row.mean_test_kappa < prev_kappa:
+    prev_acc = 999
+    for _, row in acc_df.sort_values('mean_test_auc', ascending=False).iterrows():
+        if len(priority) == 0 or row.mean_test_auc < prev_acc:
             priority.append([row.feature])
         else:
             priority[-1].append(row.feature)
-        prev_kappa = row.mean_test_kappa
-    fsets = misc_util.uncorrelated_feature_sets(train_df[feat_names], max_rho=.9, verbose=1,
-                                                remove_perfect_corr=True)#, priority_order=priority)
+        prev_acc = row.mean_test_auc
+    fsets = misc_util.uncorrelated_feature_sets(train_df[feat_names], max_rho=.8, verbose=1,
+                                                remove_perfect_corr=True, priority_order=priority)
     feat_names = fsets[0]
     print(len(feat_names), 'features after removing highly-correlated features')
 

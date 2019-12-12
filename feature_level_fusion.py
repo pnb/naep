@@ -14,7 +14,6 @@ import misc_util
 
 
 RANDOM_SEED = 11798
-CACHE_DIR = '/Users/pnb/sklearn_cache'
 # A very repetitive BayesSearchCV warning I'd like to ignore
 warnings.filterwarnings('ignore', message='The objective has been evaluated at this point before.')
 
@@ -23,7 +22,10 @@ argparser = argparse.ArgumentParser(description='Train feature-level fusion mode
 argparser.add_argument('model_type', type=str, choices=['extratrees', 'randomforest', 'xgboost'],
                        help='Type of model to train (classifier)')
 argparser.add_argument('--entropy', action='store_true',
-                       help='Split trees by information gain (default gini impurity)')
+                       help='Split trees by information gain (default is gini impurity)')
+argparser.add_argument('--optimize', type=str,
+                       choices=['kappa', 'auc', 'threshold_kappa', 'kappa+auc'],
+                       help='Hyperparameter optimization goal (default is restricted-range AUK)')
 args = argparser.parse_args()
 
 print('Loading labels from original data')
@@ -55,18 +57,25 @@ elif args.model_type == 'xgboost':
         'reg_lambda': space.Real(0, 8),
         'num_parallel_tree': space.Integer(1, 10),
     }
-model_prefix = 'predictions/' + args.model_type + ('-entropy' if args.entropy else '')
 
 xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
-scoring = metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True)
-# scoring = metrics.make_scorer(metrics.cohen_kappa_score)
-# scoring = metrics.make_scorer(metrics.roc_auc_score, needs_proba=True)
-# scoring = metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True)
-# gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1, n_jobs=3, scoring=scoring)
+if args.optimize == 'kappa':
+    scoring = metrics.make_scorer(metrics.cohen_kappa_score)
+elif args.optimize == 'auc':
+    scoring = metrics.make_scorer(metrics.roc_auc_score, needs_proba=True)
+elif args.optimize == 'threshold_kappa':
+    scoring = metrics.make_scorer(misc_util.adjusted_thresh_kappa, needs_proba=True)
+elif args.optimize == 'kappa+auc':
+    scoring = metrics.make_scorer(misc_util.kappa_plus_auc, needs_proba=True)
+else:
+    scoring = metrics.make_scorer(misc_util.thresh_restricted_auk, needs_proba=True)
 # Getting BayesSearchCV to work requires modifying site-packages/skopt/searchcv.py per:
 #   https://github.com/scikit-optimize/scikit-optimize/issues/762
 gs = BayesSearchCV(m, bayes_grid, n_iter=100, n_jobs=3, cv=xval, verbose=0, scoring=scoring,
                    random_state=RANDOM_SEED, optimizer_kwargs={'n_initial_points': 20})
+
+model_prefix = 'predictions/' + args.model_type + ('-entropy' if args.entropy else '') + \
+    ('-' + args.optimize if args.optimize else '')
 
 # Build models
 hidden_result = pd.read_csv('public_data/hidden_label.csv')

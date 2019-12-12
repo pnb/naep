@@ -67,6 +67,9 @@ for datalen, dldf in train_df.groupby('data_length'):
     kappas = [metrics.cohen_kappa_score(dldf.label, dldf.pred > t)
               for t in tqdm(np.linspace(0, 1, 101), desc='Calculating kappas')]
     plt.plot(np.linspace(0, 1, len(kappas)), kappas, label=datalen + ' max = %.3f' % max(kappas))
+    print(datalen, 'AUC =', metrics.roc_auc_score(dldf.label, dldf.pred))
+    print(datalen, 'Truncated AUC =',
+          metrics.roc_auc_score(dldf.label, dldf.pred.astype(str).str.slice(stop=6).astype(float)))
     # Adjust predictions in holdout data to match ideal training data threshold
     thresh = np.argmax(kappas) / (len(kappas) - 1)
     print(datalen, 'ideal threshold =', thresh)

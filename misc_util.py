@@ -337,6 +337,22 @@ def thresh_restricted_auk(y_true, y_pred, thresholds=100, auk_width=.1):
     return sum(restricted_kappas) / len(restricted_kappas)
 
 
+def kappa_plus_auc(y_true, y_pred, threshold=.5):
+    """Sum of Cohen's kappa and the area under the receiver operating characteristic curve (AUC)
+
+    Args:
+        y_true (Numpy array): Ground truth labels (0 or 1)
+        y_pred (Numpy array): Predicted probabilities (must be continuous, probability-like)
+        threshold (float, optional): Decision threshold for calculating kappa (>=). Defaults to .5.
+
+    Returns:
+        float: Sum of kappa and AUC (in the range [-1, 2])
+    """
+    y_pred = np.array(y_pred)
+    return metrics.cohen_kappa_score(y_true, y_pred >= threshold) + \
+        metrics.roc_auc_score(y_true, y_pred)
+
+
 if __name__ == '__main__':
     df = pd.DataFrame({'w': [2, 2, 3, 4, 5], 'x': [1, -2, 1, 3, 3], 'y': [5, 1, 3, 0, 1],
                        'z': [1.1, -1, 1, 5, 5], 'w2': [2, 2, 3, 4, 5]})
@@ -350,3 +366,4 @@ if __name__ == '__main__':
     print('Kappa:', metrics.cohen_kappa_score(truth, np.array(preds) >= .5))
     print('Threshold-adjusted kappa:', adjusted_thresh_kappa(truth, preds))
     print('Threshold-restricted AUK:', thresh_restricted_auk(truth, preds))
+    print('Kappa + AUC:', kappa_plus_auc(truth, preds))
