@@ -1,11 +1,6 @@
-# Sequence similarity features:
-#   Mean/functionals of edit distance to all training instances in positive/negative class
-# For different sequences:
+# Sequence similarity features for different sequences:
 #   AccessionNumber (exercise ID); length ~= 1/minute of data (10, 20 30)
-#   Time chunk * some activity + navigation; length = datalen / chunk size
 #   Time chunk * AccessionNumber; length = datalen / chunk size
-# Abandoned sequences (didn't work well):
-#   Time spent on AccessionNumber in percentile bins (related to the 5% cutoff); length same
 #
 # Levenshtein distance runs in O(N^2) so we must be careful with sequence length
 from collections import OrderedDict
@@ -14,28 +9,13 @@ import editdistance
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from sklearn import ensemble, model_selection, pipeline, metrics
+from sklearn import model_selection, manifold
 
-import misc_util
 import load_data
 
 
 RANDOM_SEED = 11798
-CACHE_DIR = '/Users/pnb/sklearn_cache'
 
-
-# Set up feature importance model training parameters
-m = ensemble.ExtraTreesClassifier(200, random_state=RANDOM_SEED)
-grid = {
-    'model__min_samples_leaf': [1, 2, 4, 8, 16, 32],
-    'model__max_features': [.1, .25, .5, .75, 1.0, 'auto'],
-}
-pipe = pipeline.Pipeline([
-    ('model', m),
-], memory=CACHE_DIR)
-xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
-gs = model_selection.GridSearchCV(pipe, grid, cv=xval, verbose=1,
-                                  scoring=metrics.make_scorer(metrics.cohen_kappa_score))
 
 print('Loading data')
 for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout_10m()),
@@ -49,46 +29,26 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making item sequences'):
         seq_accession[pid] = [hash(i) for i in df.AccessionNumber.drop_duplicates()]
 
-    # Sequences of chunks of time spent editing, reading, nothing, or navigating
-    seq_timechunks = {}
     # Sequences of chunks of time per item (AccessionNumber)
     seq_chunkitem = {}
-    # TODO: Are "Next" and "Click Progress Navigator" mutually exlusive, and maybe redundant with Enter Item?
-    # TODO: Leave Section appears redundant with Enter Item as well
-    nav_actions = ['Enter Item', 'Next', 'Click Progress Navigator', 'Leave Section', 'Back']
-    read_actions = ['Move Calculator', 'Vertical Item Scroll', 'TextToSpeech', 'Highlight',
-                    'Change Theme', 'Yes', 'OK', 'Hide Timer', 'Show Timer', 'No', 'Decrease Zoom',
-                    'Increase Zoom', 'Horizontal Item Scroll']
     for pid, df in tqdm(combined_df.groupby('STUDENTID'), desc='Making time chunk sequences'):
-        seq_timechunks[pid] = []
         seq_chunkitem[pid] = []
         for chunk_start in range(df.time_unix.min(), df.time_unix.max(), 5000):
             chunk_end = chunk_start + 5000
             chunk = df[(df.time_unix >= chunk_start) & (df.time_unix < chunk_end)]
-            if len(chunk) == 0:
-                seq_timechunks[pid].append(0)  # Nothing
-            elif any(act in chunk.Observable.values for act in nav_actions):
-                seq_timechunks[pid].append(1)  # Navigation
-            elif any(act in chunk.Observable.values for act in read_actions):
-                seq_timechunks[pid].append(2)  # Reading
-            else:
-                seq_timechunks[pid].append(3)  # Editing
             if len(chunk) > 0:  # Chunk*AccessionNumber
                 seq_chunkitem[pid].append(hash(chunk.AccessionNumber.iloc[-1]))
             else:  # No activity in chunk, so propagate the previous value
-                seq_chunkitem[pid].append(seq_timechunks[pid][-1])
+                seq_chunkitem[pid].append(seq_chunkitem[pid][-1])
 
     # Calculate distance matrices to avoid re-calculation during feature extraction
     accession_dist = {}  # A <-> B distance
-    timechunk_dist = {}
     chunkitem_dist = {}
     for dist_name, mat, seqs in [('accessiondist', accession_dist, seq_accession),
-                                 ('timechunkdist', timechunk_dist, seq_timechunks),
                                  ('chunkitemdist', chunkitem_dist, seq_chunkitem)]:
         for pida in tqdm(combined_df.STUDENTID.unique(), desc='Distances for ' + dist_name):
             mat[pida] = {}
-            # We only care about distance to training, so will not use combined_df here
-            for pidb in train.STUDENTID.unique():
+            for pidb in combined_df.STUDENTID.unique():
                 if pidb not in mat:
                     mat[pidb] = {}
                 if pidb not in mat[pida]:  # Symmetric, only calculate once
@@ -100,6 +60,7 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     xval_y = [train[train.STUDENTID == p].label.iloc[0] for p in xval_X]
     train_folds = [xval_X]  # Initially train on all training data, apply to all holdout
     test_folds = [holdout.STUDENTID.unique()]
+    xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
     for train_i, test_i in xval.split(xval_X, xval_y):
         train_folds.append(xval_X[train_i])
         test_folds.append(xval_X[test_i])
@@ -109,7 +70,6 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
     for fold_i, (train_pids, test_pids) in enumerate(zip(train_folds, test_folds)):
         print('Features for fold', fold_i + 1, 'of', len(train_folds))
         for dist_name, mat in [('accessiondist', accession_dist),
-                               #('timechunkdist', timechunk_dist),
                                ('chunkitemdist', chunkitem_dist)]:
             train_subset = train[train.STUDENTID.isin(train_pids)]
             positive_pids = train_subset[train_subset.label == 1].STUDENTID.unique()
@@ -135,6 +95,20 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
                     **{dist_name + '_quantile_neg_' + str(q): val
                        for q, val in zip(dist_quantiles, np.quantile(dist_neg, dist_quantiles))},
                 })
+
+    # Coordinates on a lower-dimensional manifold derived from distances
+    print('--- Multidimensional scaling')
+    for dist_name, mat in [('accessiondist', accession_dist),
+                           ('chunkitemdist', chunkitem_dist)]:
+        for n_components in range(1, 4):
+            print(dist_name, 'MDS features with', n_components, 'component(s)')
+            mds = manifold.MDS(n_components=n_components, metric=True, n_init=5, max_iter=300,
+                               verbose=1, random_state=RANDOM_SEED, dissimilarity='precomputed')
+            mds_X = pd.DataFrame(mat)
+            coords = mds.fit_transform(mds_X, None)
+            for pid, coord in tqdm(zip(mds_X.index, coords), desc='Adding coordinate features'):
+                for i, v in enumerate(coord):
+                    features[pid][dist_name + '_mds' + str(n_components) + '_' + str(i)] = v
 
     print('Saving features')
     features = pd.DataFrame.from_records(list(features.values()))

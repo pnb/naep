@@ -85,7 +85,7 @@ for datalen in ['10m', '20m', '30m']:
     feat_names = list(pd.read_csv('features_fe/filtered_features_' + datalen + '.csv').feature)
     train_df = pd.read_csv('features_fe/train_' + datalen + '.csv')[['STUDENTID'] + feat_names]
     holdout_df = pd.read_csv('features_fe/holdout_' + datalen + '.csv')[['STUDENTID'] + feat_names]
-    for fset in ['features_tsfresh', 'features_featuretools']: #, 'features_similarity']:
+    for fset in ['features_tsfresh', 'features_featuretools', 'features_similarity']:
         feat_names = list(pd.read_csv(fset + '/filtered_features_' + datalen + '.csv').feature)
         tdf = pd.read_csv(fset + '/train_' + datalen + '.csv')[['STUDENTID'] + feat_names]
         hdf = pd.read_csv(fset + '/holdout_' + datalen + '.csv')[['STUDENTID'] + feat_names]

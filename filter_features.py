@@ -73,8 +73,8 @@ for datalen in ['10m', '20m', '30m']:
         else:
             priority[-1].append(row.feature)
         prev_acc = row.mean_test_auc
-    fsets = misc_util.uncorrelated_feature_sets(train_df[feat_names], max_rho=.8, verbose=1,
-                                                remove_perfect_corr=True, priority_order=priority)
+    fsets = misc_util.uncorrelated_feature_sets(train_df[feat_names], max_rho=.9, verbose=1,
+                                                remove_perfect_corr=True) #, priority_order=priority)
     feat_names = fsets[0]
     print(len(feat_names), 'features after removing highly-correlated features')
 
