@@ -21,7 +21,15 @@ print('Loading data')
 for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout_10m()),
                                 ('20m', load_data.train_20m(), load_data.holdout_20m()),
                                 ('30m', load_data.train_full(), load_data.holdout_30m())]:
-    print('\nCalculating Levenshtein distance features for', datalen)
+    print('\n--- Calculating Levenshtein distances for', datalen)
+    if datalen == '30m':  # Use 25m data instead since it seems better
+        start_unix_map = {p: v.time_unix.min() for p, v in train.groupby('STUDENTID')}
+        train['start_unix'] = [start_unix_map[p] for p in train.STUDENTID]
+        train = train[train.time_unix < train.start_unix + 25 * 60000].drop(columns='start_unix')
+        start_unix_map = {p: v.time_unix.min() for p, v in holdout.groupby('STUDENTID')}
+        holdout['start_unix'] = [start_unix_map[p] for p in holdout.STUDENTID]
+        holdout = holdout[holdout.time_unix < holdout.start_unix + 25 * 60000] \
+            .drop(columns='start_unix')
     combined_df = train.append(holdout, ignore_index=True, sort=False)
 
     # Precalculate item sequences with hash(), since comparing strings is slow otherwise
@@ -54,48 +62,7 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
                 if pidb not in mat[pida]:  # Symmetric, only calculate once
                     mat[pida][pidb] = mat[pidb][pida] = editdistance.eval(seqs[pida], seqs[pidb])
 
-    # Set up PIDs to use in "training" the features
-    print('Splitting data')
-    xval_X = train.STUDENTID.unique()
-    xval_y = [train[train.STUDENTID == p].label.iloc[0] for p in xval_X]
-    train_folds = [xval_X]  # Initially train on all training data, apply to all holdout
-    test_folds = [holdout.STUDENTID.unique()]
-    xval = model_selection.StratifiedKFold(4, shuffle=True, random_state=RANDOM_SEED)
-    for train_i, test_i in xval.split(xval_X, xval_y):
-        train_folds.append(xval_X[train_i])
-        test_folds.append(xval_X[test_i])
-
-    dist_quantiles = [.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .99]
     features = {}  # STUDENTID -> OrderedDict of features
-    for fold_i, (train_pids, test_pids) in enumerate(zip(train_folds, test_folds)):
-        print('Features for fold', fold_i + 1, 'of', len(train_folds))
-        for dist_name, mat in [('accessiondist', accession_dist),
-                               ('chunkitemdist', chunkitem_dist)]:
-            train_subset = train[train.STUDENTID.isin(train_pids)]
-            positive_pids = train_subset[train_subset.label == 1].STUDENTID.unique()
-            negative_pids = train_subset[train_subset.label == 0].STUDENTID.unique()
-            assert len(positive_pids) > 0 and len(negative_pids) > 0
-            for pid in tqdm(test_pids, desc='Features for ' + dist_name):
-                # Include distance to self; otherwise tiny differences leak label info
-                dist_pos = np.array([mat[pid][p] for p in positive_pids])
-                dist_neg = np.array([mat[pid][p] for p in negative_pids])
-                if pid not in features:
-                    features[pid] = OrderedDict({
-                        'STUDENTID': pid,
-                        'label': combined_df[combined_df.STUDENTID == pid].label.iloc[0],
-                    })
-                features[pid].update({
-                    dist_name + '_mean_pos': np.mean(dist_pos),
-                    dist_name + '_mean_neg': np.mean(dist_neg),
-                    dist_name + '_mean_diff': np.mean(dist_pos) - np.mean(dist_neg),
-                    dist_name + '_std_pos': np.std(dist_pos),
-                    dist_name + '_std_neg': np.std(dist_neg),
-                    **{dist_name + '_quantile_pos_' + str(q): val
-                       for q, val in zip(dist_quantiles, np.quantile(dist_pos, dist_quantiles))},
-                    **{dist_name + '_quantile_neg_' + str(q): val
-                       for q, val in zip(dist_quantiles, np.quantile(dist_neg, dist_quantiles))},
-                })
-
     # Coordinates on a lower-dimensional manifold derived from distances
     print('--- Multidimensional scaling')
     for dist_name, mat in [('accessiondist', accession_dist),
@@ -107,6 +74,11 @@ for datalen, train, holdout in [('10m', load_data.train_10m(), load_data.holdout
             mds_X = pd.DataFrame(mat)
             coords = mds.fit_transform(mds_X, None)
             for pid, coord in tqdm(zip(mds_X.index, coords), desc='Adding coordinate features'):
+                if pid not in features:
+                    features[pid] = OrderedDict({
+                        'STUDENTID': pid,
+                        'label': combined_df[combined_df.STUDENTID == pid].label.iloc[0],
+                    })
                 for i, v in enumerate(coord):
                     features[pid][dist_name + '_mds' + str(n_components) + '_' + str(i)] = v
 
