@@ -1,7 +1,6 @@
 # Combine predictions from one or more models and put them in the correct submission format
 # Expected base rate, if it matters: 0.6038961038961039
 import re
-import os
 import argparse
 
 import pandas as pd
@@ -61,6 +60,8 @@ plt.ylabel('Count')
 plt.show()
 
 # Rescale predictions to try improve kappa
+print('Overall kappa at .5 threshold =',
+      metrics.cohen_kappa_score(train_df.label, train_df.pred > .5))
 plt.figure()
 for datalen, dldf in train_df.groupby('data_length'):
     # Plot kappa over decision thresholds
